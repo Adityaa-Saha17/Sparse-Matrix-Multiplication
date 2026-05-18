@@ -31,7 +31,7 @@ iterative development — `git pull` to refresh).
 
 ```bash
 # Cell 1 — clone into /kaggle/working (writable)
-!cd /kaggle/working && git clone https://github.com/<YOUR_USERNAME>/<YOUR_REPO>.git spmm
+!cd /kaggle/working && git clone https://github.com/Adityaa-Saha17/Sparse-Matrix-Multiplication.git spmm
 %cd /kaggle/working/spmm
 ```
 
