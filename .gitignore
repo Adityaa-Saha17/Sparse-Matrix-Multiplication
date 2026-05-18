@@ -1,0 +1,16 @@
+build/
+dump/
+*.bin
+*.o
+*.obj
+
+
+__pycache__/
+*.pyc
+.venv/
+.ipynb_checkpoints/
+
+
+.vscode/
+.idea/
+.DS_Store
