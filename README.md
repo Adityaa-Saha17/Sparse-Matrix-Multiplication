@@ -132,11 +132,14 @@ Whichever ingestion method you used, the binary is `./build/spmm_bench`.
 Output is one line per kernel:
 
 ```
-kernel=baseline m=4096 k=4096 n=256 nnz=167680 density=0.010000 time_ms=2.34 gflops=36.7 max_abs_err=4.77e-07 max_rel_err=2.38e-06
-kernel=memopt   m=4096 k=4096 n=256 nnz=167680 density=0.010000 time_ms=0.91 gflops=94.4 max_abs_err=4.77e-07 max_rel_err=2.38e-06
+kernel=baseline m=4096 k=4096 n=256 nnz=167772 density=0.010000 time_ms=0.339 gflops=253.4 max_abs_err=3.2e-07 max_rel_err=1.8e-06 rel_l2_err=2.1e-07
+kernel=memopt   m=4096 k=4096 n=256 nnz=167772 density=0.010000 time_ms=0.341 gflops=251.9 max_abs_err=3.2e-07 max_rel_err=1.8e-06 rel_l2_err=2.1e-07
 ```
 
-A correct run has `max_rel_err` on the order of `1e-6` (FP32 round-off only).
+A correct run has `rel_l2_err < 1e-4` (Phase 1 DoD). Observed values are
+`7.9e-9` to `5.3e-7` across all tested sizes — FP32 round-off only.
+`max_rel_err` is filtered: only cells where `|ref| ≥ 0.1% × max|ref|` are
+counted, to suppress noise from near-zero reference values.
 
 ---
 
