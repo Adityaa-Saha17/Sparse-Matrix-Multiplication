@@ -1,8 +1,6 @@
 # Week 1 — Baseline CSR SpMM + Memory Optimization
 
 **Project:** Architecture-aware Sparse Matrix Multiplication on NVIDIA GPUs.
-**Phase 1 goal:** Working baseline CSR SpMM kernel and a memory-optimized variant,
-both validated against cuSPARSE, with timing recorded across sizes and sparsity levels.
 
 ---
 
@@ -43,23 +41,23 @@ both validated against cuSPARSE, with timing recorded across sizes and sparsity 
 Hardware: **NVIDIA T4 (sm_75)** on Kaggle. All runs: `n=256`, `iters=20`.
 Median over 20 timed iterations; speedup = baseline_ms / memopt_ms.
 
-| m=k   | density | nnz (approx) | base (ms) | base (GFLOPS) | memopt (ms) | memopt (GFLOPS) | speedup | verdict        |
-|-------|---------|-------------|-----------|--------------|-------------|-----------------|---------|----------------|
-| 1024  | 0.050   | 52 429      | 0.121     | 221.9        | 0.149       | 180.2           | 0.81×   | baseline       |
-| 1024  | 0.010   | 10 486      | 0.031     | 173.2        | 0.037       | 145.1           | 0.84×   | baseline       |
-| 1024  | 0.001   | 1 049       | 0.018     | 29.8         | 0.016       | 33.6            | 1.07×   | ~tie           |
-| 4096  | 0.050   | 838 861     | 1.378     | 311.7        | 1.397       | 307.4           | 0.99×   | tie            |
-| 4096  | 0.010   | 167 772     | 0.339     | 253.4        | 0.341       | 251.9           | 0.99×   | tie            |
-| 4096  | 0.001   | 16 777      | 0.108     | 79.5         | 0.082       | 104.7           | **1.32×** | **memopt** |
-| 8192  | 0.050   | 3 355 443   | 8.140     | 211.1        | 7.520       | 228.4           | **1.08×** | **memopt** |
-| 8192  | 0.010   | 671 089     | 1.733     | 198.3        | 1.894       | 181.4           | 0.92×   | baseline       |
-| 8192  | 0.001   | 67 109      | 0.251     | 136.9        | 0.267       | 128.7           | 0.94×   | baseline       |
-| 16384 | 0.050   | 13 421 773  | ~43.8     | ~156.9       | ~43.5       | ~157.9          | ~1.01×  | tie (noisy)    |
-| 16384 | 0.010   | 2 684 355   | 10.010    | 137.3        | 10.910      | 125.9           | 0.92×   | baseline       |
-| 16384 | 0.001   | 268 436     | 1.096     | 125.4        | 1.227       | 112.0           | 0.89×   | baseline       |
+| m=k   | density | nnz       | base (ms) | base (GFLOPS) | memopt (ms) | memopt (GFLOPS) | speedup   | verdict        |
+|-------|---------|-----------|-----------|---------------|-------------|-----------------|-----------|----------------|
+| 1024  | 0.050   | 52 260    | 0.1044    | 256.2         | 0.1305      | 205.1           | 0.80×     | baseline       |
+| 1024  | 0.010   | 10 388    | 0.0307    | 173.1         | 0.0369      | 144.3           | 0.83×     | baseline       |
+| 1024  | 0.001   | 1 044     | 0.0184    | 29.0          | 0.0164      | 32.6            | 1.12×     | memopt         |
+| 4096  | 0.050   | 839 236   | 1.7582    | 244.4         | 1.7818      | 241.2           | 0.99×     | tie            |
+| 4096  | 0.010   | 167 686   | 0.4026    | 213.2         | 0.4021      | 213.5           | 1.00×     | tie            |
+| 4096  | 0.001   | 16 935    | 0.1110    | 78.1          | 0.0841      | 103.1           | **1.32×** | **memopt**     |
+| 8192  | 0.050   | 3 354 625 | 8.1408    | 211.0         | 7.1997      | 238.6           | **1.13×** | **memopt**     |
+| 8192  | 0.010   | 671 114   | 1.7279    | 198.9         | 1.9184      | 179.1           | 0.90×     | baseline       |
+| 8192  | 0.001   | 67 137    | 0.2580    | 133.2         | 0.2691      | 127.7           | 0.96×     | baseline       |
+| 16384 | 0.050   | 13 421 456| 41.2979   | 166.4         | 47.5195     | 144.6           | 0.87×     | baseline       |
+| 16384 | 0.010   | 2 684 748 | 10.0370   | 137.0         | 10.8586     | 126.6           | 0.92×     | baseline       |
+| 16384 | 0.001   | 268 160   | 1.0978    | 125.1         | 1.2253      | 112.1           | 0.90×     | baseline       |
 
-*Numbers stable across 3 independent sweeps; 1024-size cells show ~20–30% run-to-run variance
-(low GPU utilisation at small problem sizes makes timing noisy).*
+*One Kaggle T4 session, `iters=20`, median timing. Run-to-run variance observed
+across multiple sessions: ±5–10% for m≥4096, up to ±30% for m=1024 cells.*
 
 ---
 
@@ -82,16 +80,17 @@ noise from near-zero reference values.
 
 **Baseline GFLOPS vs. matrix size (density 0.05)**
 
-| m    | baseline GFLOPS |
-|------|-----------------|
-| 1024 | 221.9           |
-| 4096 | 311.7  ← peak   |
-| 8192 | 211.1           |
-| 16384| 156.9           |
+| m     | baseline GFLOPS |
+|-------|-----------------|
+| 1024  | 256.2  ← peak   |
+| 4096  | 244.4           |
+| 8192  | 211.0           |
+| 16384 | 166.4           |
 
-GFLOPS peaks at m=4096 and *decreases* at larger sizes — a sign of load imbalance
-(highly variable row lengths → warp divergence) and/or L2 cache thrashing once
-the working set of B exceeds ~40 MB (T4 has 4 MB L2).
+GFLOPS decreases monotonically with matrix size — a sign of L2 cache thrashing
+once the working set of B exceeds the T4's 4 MB L2 (B alone is m×n×4B = 4 MB
+at m=4096, n=1024×4B → already past L2 at m=4096). Load imbalance from
+variable row lengths (warp divergence) compounds this at larger sizes.
 
 **When does memopt win vs. lose?**
 
@@ -113,32 +112,79 @@ better in L1/L2 and the warp-stride access pattern achieves higher memory effici
 
 ---
 
-## Profiling (pending — Phase 1 close-out)
+## Profiling — Nsight Compute findings
 
-Target cells for `ncu --set basic`:
+ncu was blocked on Kaggle (`ERR_NVGPUCTRPERM`, shared-tenant counter
+lockdown). Re-ran on Google Colab — same T4 hardware (`Tesla T4, CC 7.5,
+40 SMs, 15 GB`), counters available. Profiles: `colabRunner.ipynb`,
+saved outputs `ncu_*.txt`.
 
-| cell | kernel | purpose |
-|------|--------|---------|
-| m=8192, density=0.01 | both | why memopt loses (−8%) |
-| m=4096, density=0.001 | both | why memopt wins (+32%) |
+### Configuration A — m=8192, density=0.01 (memopt loses ~10 %)
 
-Commands (run on Kaggle T4):
-```bash
-ncu --set basic --target-processes all --kernel-name regex:spmm \
-    ./build/spmm_bench --m 8192 --k 8192 --n 256 --density 0.01 \
-    --iters 1 --warmup 0 --kernel baseline 2>&1 | tail -60
-```
-Repeat with `--kernel memopt` and the m=4096 d=0.001 pair.
-Key counters to compare: `sm__throughput`, `l1tex__t_bytes`, `smsp__warp_issue_stalled_*`.
+| metric                         | baseline   | memopt     |
+|--------------------------------|-----------:|-----------:|
+| Duration                       | 1.85 ms    | 2.04 ms    |
+| **DRAM throughput**            | **90.3 %** | 85.2 %     |
+| L1/TEX cache throughput        | 76.4 %     | 69.5 %     |
+| L2 cache throughput            | 45.0 %     | 40.1 %     |
+| Compute (SM) throughput        | 76.1 %     | 68.1 %     |
+| Achieved occupancy             | 86.2 %     | 83.7 %     |
+| Registers per thread           | 54         | **63**     |
+| Grid / threads                 | 8192 / 2.1 M | 1024 / 262 K |
+| Waves per SM                   | 51.2       | 6.4        |
 
----
+**Both kernels are DRAM-bound** (>85 % memory throughput; ncu flags both
+as "utilizing greater than 80 % of available memory performance"). In a
+bandwidth-bound regime, occupancy and wave count govern who wins. Memopt
+spills more state (`63` vs `54` regs/thread, hitting the SM register-block
+limit of 4 blocks/SM in both cases) and dispatches 8× fewer thread blocks
+(warp-per-row collapses parallelism). The result: 5 percentage points lost
+on DRAM throughput and 8 pp on compute throughput → 10 % slower.
 
-## Next week (Phase 2 — deeper memory optimizations)
+### Configuration B — m=4096, density=0.001 (memopt wins +32 %)
 
-1. Run ncu profiles for the two target cells above; add findings here.
-2. Shared-memory tiling of dense B (tile size 16×64).
-3. Register accumulation + manual loop unrolling for the inner dot-product.
-4. Vectorized loads (`float4`, `__ldg`).
+| metric                         | baseline    | memopt           |
+|--------------------------------|------------:|-----------------:|
+| Duration                       | 122.6 µs    | ~85 µs (from sweep) |
+| **DRAM throughput**            | **39.0 %**  | (n/a — output trimmed) |
+| L1/TEX cache throughput        | 42.3 %      | n/a              |
+| Compute (SM) throughput        | 41.1 %      | n/a              |
+| Achieved occupancy             | 75.6 %      | 75.1 %           |
+| Grid / threads                 | 4096 / 1.05 M | 512 / 131 K   |
+| Waves per SM                   | 25.6        | 3.2              |
+| Avg nnz / row                  | ≈ 4         | ≈ 4              |
 
-Target: cumulative ≥2× speedup over baseline in the 4096–8192 range (density 0.01–0.05);
-nsight-compute profiling for validation.
+ncu's own diagnostic on the baseline:
+> *Achieved compute throughput and/or memory bandwidth below 60.0 % of peak
+> typically indicate latency issues. Look at Scheduler Statistics and Warp
+> State Statistics for potential reasons.*
+
+The baseline is **latency-bound**, not bandwidth-bound. With ~4 nonzeros
+per row, each baseline thread does almost no arithmetic — most of its
+time is the row_ptr lookup, the loop prologue, and the final store. It
+launches 1 M threads with 8 rows per block, so every block re-reads the
+same row_ptr values 32 times.
+
+memopt's warp-per-row pattern launches 8× fewer threads but gives each
+thread 256× more arithmetic work (the `for col = lane; col < N; col += 32`
+loop). Per-row state (`row_start`, `row_end`) is read once per warp instead
+of 32 times. The reduction in launch/scheduling overhead and the higher
+per-thread arithmetic intensity win the regime — even though peak DRAM
+throughput is well below the bandwidth ceiling.
+
+### Why the pattern flips across the sweep
+
+| regime                          | bottleneck   | who wins   | why                                        |
+|---------------------------------|-------------|-----------|---------------------------------------------|
+| dense, large-row (e.g. 8192 d=0.01) | DRAM bandwidth | baseline | higher occupancy + more waves/SM            |
+| sparse, short-row (e.g. 4096 d=0.001) | scheduling latency | memopt | fewer threads, more work each, less overhead |
+
+This explains the bimodal verdicts in the sweep table: memopt only beats
+baseline when the baseline is *not* saturating DRAM. The "memopt sweet
+spot" is therefore narrow on T4 — bounded above by register pressure
+(63 regs/thread limits occupancy in dense regimes) and below by the small
+problem-size noise floor.
+
+### AI - USE
+
+Utilized AI tools such as ChatGPT and Perplexity AI to assist with research and gathering relevant information, and Claude for code validation and testing.

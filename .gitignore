@@ -2,3 +2,4 @@ dump/
 .vscode/
 .DS_Store
 ./claude
+*.ipynb

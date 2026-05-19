@@ -1,8 +1,56 @@
 # CUDA Sparse Matrix Multiplication
 
 Architecture-aware Sparse × Dense matrix multiplication (SpMM) on NVIDIA GPUs.
+Target hardware: **NVIDIA T4** (sm_75) via Kaggle's free dual-T4 environment.
 
-This README is focused on **running the project on Kaggle Notebooks** (the
+---
+
+## Project status
+
+| # | Task                                                              | Phase | Status         |
+|---|-------------------------------------------------------------------|-------|----------------|
+| 1 | Baseline CSR SpMM on CUDA cores                                   | 1     | ✅ done         |
+| 2 | Memory optimization (coalescing, shared-mem tiling, register reuse) | 1–2 | 🟡 in progress (coalescing/warp-per-row done; tiling + register reuse next) |
+| 3 | Tensor Core acceleration (block-sparse on T4)                     | 3     | ⏳ not started  |
+| 4 | Hybrid execution (CUDA cores vs. Tensor Cores)                    | 4     | ⏳ not started  |
+| 5 | Memory-aware execution (unified memory / multi-GPU)               | 5     | ⏳ not started  |
+| 6 | Performance evaluation across patterns and sizes                  | all   | 🟡 ongoing      |
+| 7 | Final integrated system                                           | 6     | ⏳ not started  |
+
+**Latest report:** [reports/week1.md](reports/week1.md) — Phase 1 close-out
+with `ncu` profiling findings on Colab T4.
+
+**Headline result from Phase 1:** memopt's win/loss vs. baseline is not
+random — it tracks the kernel's bottleneck. memopt wins in the
+**latency-bound** regime (short rows, sparse) by amortising scheduling
+overhead; baseline wins in the **bandwidth-bound** regime (long rows,
+dense) thanks to higher occupancy. DRAM throughput is 39 % in memopt's
+win cell and 90 % in its loss cell — the cleanest signal we could ask for.
+
+---
+
+## Repository layout
+
+```
+src/
+  csr.{h,cu}                  CSR data structure + host↔device transfer
+  utils.h                     CUDA / cuSPARSE error checks, GpuTimer
+  kernels/
+    spmm_baseline.{h,cu}      one-thread-per-output baseline
+    spmm_memopt.{h,cu}        warp-per-row, coalesced reads
+  bench/
+    harness.cu                benchmark + cuSPARSE correctness check
+scripts/
+  gen_matrices.py             synthetic CSR generator (uniform/banded/block/power-law)
+reports/
+  week1.md                    Phase 1 weekly report
+colabRunner.ipynb             Colab notebook for ncu profiling
+Makefile                      targets sm_75 (T4)
+```
+
+---
+
+This README focuses on **running the project on Kaggle Notebooks** (the
 free dual-T4 environment used for development). Two ingestion methods are
 supported: pulling from GitHub, or attaching this repo as a Kaggle Dataset.
 
