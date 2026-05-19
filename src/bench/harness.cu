@@ -142,17 +142,26 @@ void run_cusparse_spmm(int M, int N, int K, const spmm::CSR& d_A, const float* d
 
 struct ErrorStats {
     float max_abs = 0.f;
-    float max_rel = 0.f;
+    float max_rel = 0.f;  // filtered: only cells whose |ref| is >=0.1% of peak |ref|
+    float rel_l2  = 0.f;  // ||ours - ref||_2 / ||ref||_2
 };
 
 ErrorStats compare(const std::vector<float>& ours, const std::vector<float>& ref) {
     ErrorStats s;
+    float ref_max = 0.f;
+    for (float v : ref) ref_max = std::max(ref_max, std::fabs(v));
+    const float rel_floor = 1e-3f * ref_max;
+
+    double err_sq = 0.0, ref_sq = 0.0;
     for (size_t i = 0; i < ours.size(); ++i) {
         float d = std::fabs(ours[i] - ref[i]);
         s.max_abs = std::max(s.max_abs, d);
         float a = std::fabs(ref[i]);
-        if (a > 1e-6f) s.max_rel = std::max(s.max_rel, d / a);
+        if (a > rel_floor) s.max_rel = std::max(s.max_rel, d / a);
+        err_sq += static_cast<double>(d) * d;
+        ref_sq += static_cast<double>(a) * a;
     }
+    s.rel_l2 = (ref_sq > 0.0) ? static_cast<float>(std::sqrt(err_sq / ref_sq)) : 0.f;
     return s;
 }
 
@@ -167,6 +176,7 @@ struct KernelResult {
     float gflops;
     float max_abs_err;
     float max_rel_err;
+    float rel_l2_err;
 };
 
 KernelResult run_and_benchmark(const std::string& name,
@@ -199,7 +209,7 @@ KernelResult run_and_benchmark(const std::string& name,
     double flops = 2.0 * static_cast<double>(d_A.nnz) * N;
     double gflops = flops / (static_cast<double>(ms) * 1.0e6);
 
-    return {name, ms, static_cast<float>(gflops), err.max_abs, err.max_rel};
+    return {name, ms, static_cast<float>(gflops), err.max_abs, err.max_rel, err.rel_l2};
 }
 
 }  // namespace
@@ -257,9 +267,9 @@ int main(int argc, char** argv) {
     for (const auto& r : results) {
         std::printf(
             "kernel=%s m=%d k=%d n=%d nnz=%d density=%.6f "
-            "time_ms=%.4f gflops=%.2f max_abs_err=%.3e max_rel_err=%.3e\n",
+            "time_ms=%.4f gflops=%.2f max_abs_err=%.3e max_rel_err=%.3e rel_l2_err=%.3e\n",
             r.name.c_str(), args.m, args.k, args.n, h_A.nnz, actual_density,
-            r.time_ms, r.gflops, r.max_abs_err, r.max_rel_err);
+            r.time_ms, r.gflops, r.max_abs_err, r.max_rel_err, r.rel_l2_err);
     }
 
     // Cleanup.
