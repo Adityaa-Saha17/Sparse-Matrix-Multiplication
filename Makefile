@@ -15,6 +15,9 @@ BUILD_DIR  = build
 SRCS = src/csr.cu \
        src/kernels/spmm_baseline.cu \
        src/kernels/spmm_memopt.cu \
+       src/kernels/spmm_memopt_v2.cu \
+       src/kernels/spmm_tiled.cu \
+       src/kernels/spmm_tiled_v2.cu \
        src/bench/harness.cu
 
 OBJS = $(SRCS:%.cu=$(BUILD_DIR)/%.o)

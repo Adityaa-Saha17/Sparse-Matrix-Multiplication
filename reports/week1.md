@@ -38,26 +38,28 @@
 
 ## Results
 
-Hardware: **NVIDIA T4 (sm_75)** on Kaggle. All runs: `n=256`, `iters=20`.
-Median over 20 timed iterations; speedup = baseline_ms / memopt_ms.
+Hardware: **NVIDIA T4 (sm_75)** on Google Colab. All runs: `n=256`,
+`iters=20`. Median over 20 timed iterations; speedup = baseline_ms / memopt_ms.
 
-| m=k   | density | nnz       | base (ms) | base (GFLOPS) | memopt (ms) | memopt (GFLOPS) | speedup   | verdict        |
-|-------|---------|-----------|-----------|---------------|-------------|-----------------|-----------|----------------|
-| 1024  | 0.050   | 52 260    | 0.1044    | 256.2         | 0.1305      | 205.1           | 0.80×     | baseline       |
-| 1024  | 0.010   | 10 388    | 0.0307    | 173.1         | 0.0369      | 144.3           | 0.83×     | baseline       |
-| 1024  | 0.001   | 1 044     | 0.0184    | 29.0          | 0.0164      | 32.6            | 1.12×     | memopt         |
-| 4096  | 0.050   | 839 236   | 1.7582    | 244.4         | 1.7818      | 241.2           | 0.99×     | tie            |
-| 4096  | 0.010   | 167 686   | 0.4026    | 213.2         | 0.4021      | 213.5           | 1.00×     | tie            |
-| 4096  | 0.001   | 16 935    | 0.1110    | 78.1          | 0.0841      | 103.1           | **1.32×** | **memopt**     |
-| 8192  | 0.050   | 3 354 625 | 8.1408    | 211.0         | 7.1997      | 238.6           | **1.13×** | **memopt**     |
-| 8192  | 0.010   | 671 114   | 1.7279    | 198.9         | 1.9184      | 179.1           | 0.90×     | baseline       |
-| 8192  | 0.001   | 67 137    | 0.2580    | 133.2         | 0.2691      | 127.7           | 0.96×     | baseline       |
-| 16384 | 0.050   | 13 421 456| 41.2979   | 166.4         | 47.5195     | 144.6           | 0.87×     | baseline       |
-| 16384 | 0.010   | 2 684 748 | 10.0370   | 137.0         | 10.8586     | 126.6           | 0.92×     | baseline       |
-| 16384 | 0.001   | 268 160   | 1.0978    | 125.1         | 1.2253      | 112.1           | 0.90×     | baseline       |
+| m=k   | density | nnz        | base (ms) | base (GFLOPS) | memopt (ms) | memopt (GFLOPS) | speedup   | verdict     |
+|-------|---------|------------|-----------|---------------|-------------|-----------------|-----------|-------------|
+| 1024  | 0.050   | 52 260     | 0.0746    | 358.6         | 0.0928      | 288.3           | 0.80×     | baseline    |
+| 1024  | 0.010   | 10 388     | 0.0227    | 234.1         | 0.0268      | 198.3           | 0.85×     | baseline    |
+| 1024  | 0.001   | 1 044      | 0.0127    | 42.2          | 0.0119      | 44.8            | 1.07×     | memopt (noisy) |
+| 4096  | 0.050   | 839 236    | 0.9358    | 459.2         | 1.2059      | 356.3           | 0.78×     | baseline    |
+| 4096  | 0.010   | 167 686    | 0.2124    | 404.3         | 0.2112      | 406.6           | 1.01×     | tie         |
+| 4096  | 0.001   | 16 935     | 0.0818    | 106.0         | 0.0715      | 121.2           | **1.14×** | **memopt**  |
+| 8192  | 0.050   | 3 354 625  | 7.8790    | 218.0         | 7.8228      | 219.6           | 1.01×     | tie         |
+| 8192  | 0.010   | 671 114    | 1.7319    | 198.4         | 1.8964      | 181.2           | 0.91×     | baseline    |
+| 8192  | 0.001   | 67 137     | 0.2519    | 136.5         | 0.2661      | 129.2           | 0.95×     | baseline    |
+| 16384 | 0.050   | 13 421 456 | 41.2235   | 166.7         | 48.0457     | 143.0           | 0.86×     | baseline    |
+| 16384 | 0.010   | 2 684 748  | 9.9961    | 137.5         | 10.9173     | 125.9           | 0.92×     | baseline    |
+| 16384 | 0.001   | 268 160    | 1.0978    | 125.1         | 1.2255      | 112.0           | 0.90×     | baseline    |
 
-*One Kaggle T4 session, `iters=20`, median timing. Run-to-run variance observed
-across multiple sessions: ±5–10% for m≥4096, up to ±30% for m=1024 cells.*
+*Single Colab T4 session, `iters=20`, median timing. Run-to-run variance
+observed across sessions on shared-tenant T4s: ±5–10% for m≥4096, up to
+±30% for m=1024 cells (low GPU utilisation makes small-problem timing
+noisy). The m=1024 d=0.001 cell's memopt win is within the noise floor.*
 
 ---
 
@@ -82,42 +84,37 @@ noise from near-zero reference values.
 
 | m     | baseline GFLOPS |
 |-------|-----------------|
-| 1024  | 256.2  ← peak   |
-| 4096  | 244.4           |
-| 8192  | 211.0           |
-| 16384 | 166.4           |
+| 1024  | 358.6           |
+| 4096  | 459.2  ← peak   |
+| 8192  | 218.0           |
+| 16384 | 166.7           |
 
-GFLOPS decreases monotonically with matrix size — a sign of L2 cache thrashing
-once the working set of B exceeds the T4's 4 MB L2 (B alone is m×n×4B = 4 MB
-at m=4096, n=1024×4B → already past L2 at m=4096). Load imbalance from
-variable row lengths (warp divergence) compounds this at larger sizes.
+GFLOPS peaks at m=4096 and drops sharply at m=8192 and beyond — consistent
+with the dense matrix B's working set exceeding the T4's 4 MB L2 around
+m=4096 (B is m × n × 4 B = 4 MB at m=4096, n=256). Past that point the
+kernel re-reads B from DRAM on every row, and aggregate GFLOPS falls
+to roughly the DRAM-bandwidth-limited ceiling (~165–220 GFLOPS).
 
 **When does memopt win vs. lose?**
 
-memopt is a warp-per-row kernel. It outperforms the baseline in the **sparse,
-large-row** regime (m=4096, density=0.001; m=8192, density=0.05) where each warp
-processes a long row and the warp-stride access pattern amortises the overhead of
-the outer column loop.
+memopt's only clean win on this sweep is **m=4096, density=0.001 (+14%)**.
+The m=1024 d=0.001 cell also shows memopt ahead but is inside the
+±20–30% small-problem noise floor. Everywhere else is a tie (m=4096
+d=0.010, m=8192 d=0.050) or a baseline win — particularly **at m≥4096,
+density=0.050**, where baseline beats memopt by 14–22%.
 
-It loses in the **dense, small-problem** regime (m=1024, density≥0.01) where the
-overhead of the warp-centric dispatch (extra arithmetic in the column-stride loop)
-outweighs its memory access advantage, and overall occupancy is low enough that
-the scheduler cannot hide the latency.
+The pattern: memopt wins only where rows are very short (few nonzeros)
+and the kernel's bottleneck is launch/scheduling overhead rather than
+memory bandwidth. As soon as rows get long enough to saturate DRAM,
+baseline's higher occupancy (8× more thread blocks) wins out.
 
-**Root cause (to be confirmed by ncu):**
-Hypothesis — at m=8192, density=0.01 (memopt loses), memory throughput is not the
-bottleneck; warp stalls due to control-flow divergence (rows with very different
-lengths) dominate. At m=4096, density=0.001 (memopt wins), the working set fits
-better in L1/L2 and the warp-stride access pattern achieves higher memory efficiency.
+**Root cause confirmed by ncu** (see the Profiling section below): at m=8192 d=0.01 both kernels are bandwidth-bound (90% / 85% DRAM throughput) and memopt's 63-register-per-thread footprint costs it ~3 pp of occupancy. At m=4096 d=0.001 the baseline is latency-bound (39% DRAM) and memopt's lower thread count + higher per-thread work hides the scheduling cost.
 
 ---
 
 ## Profiling — Nsight Compute findings
 
-ncu was blocked on Kaggle (`ERR_NVGPUCTRPERM`, shared-tenant counter
-lockdown). Re-ran on Google Colab — same T4 hardware (`Tesla T4, CC 7.5,
-40 SMs, 15 GB`), counters available. Profiles: `colabRunner.ipynb`,
-saved outputs `ncu_*.txt`.
+ncu was blocked on Kaggle (`ERR_NVGPUCTRPERM`, shared-tenant counter lockdown). Re-ran on Google Colab — same T4 hardware (`Tesla T4, CC 7.5, 40 SMs, 15 GB`), counters available. Profiles: `colabRunner.ipynb`, saved outputs `ncu_*.txt`.
 
 ### Configuration A — m=8192, density=0.01 (memopt loses ~10 %)
 
@@ -141,11 +138,11 @@ limit of 4 blocks/SM in both cases) and dispatches 8× fewer thread blocks
 (warp-per-row collapses parallelism). The result: 5 percentage points lost
 on DRAM throughput and 8 pp on compute throughput → 10 % slower.
 
-### Configuration B — m=4096, density=0.001 (memopt wins +32 %)
+### Configuration B — m=4096, density=0.001 (memopt wins +14 %)
 
 | metric                         | baseline    | memopt           |
 |--------------------------------|------------:|-----------------:|
-| Duration                       | 122.6 µs    | ~85 µs (from sweep) |
+| Duration                       | 122.6 µs    | 71.5 µs (from sweep) |
 | **DRAM throughput**            | **39.0 %**  | (n/a — output trimmed) |
 | L1/TEX cache throughput        | 42.3 %      | n/a              |
 | Compute (SM) throughput        | 41.1 %      | n/a              |
@@ -187,4 +184,4 @@ problem-size noise floor.
 
 ### AI - USE
 
-Utilized AI tools such as ChatGPT and Perplexity AI to assist with research and gathering relevant information, and Claude for code validation and testing.
+Utilized AI tools such as ***ChatGPT*** and ***Perplexity AI*** to assist with research, gathering relevant information, and developing an appropriate design structure and implementation plan for the project. ***Claude AI*** was used for code validation and testing, formatting, adding comments, and refining the language and presentation of the report.

@@ -1,7 +1,9 @@
 # CUDA Sparse Matrix Multiplication
 
 Architecture-aware Sparse × Dense matrix multiplication (SpMM) on NVIDIA GPUs.
-Target hardware: **NVIDIA T4** (sm_75) via Kaggle's free dual-T4 environment.
+Target hardware: **NVIDIA T4** (sm_75). Development and dual-GPU experiments
+run on Kaggle (free dual-T4); profiling runs on Google Colab (single T4,
+where Nsight Compute counters are accessible).
 
 ---
 
@@ -177,11 +179,11 @@ Whichever ingestion method you used, the binary is `./build/spmm_bench`.
 !./build/spmm_bench --bin data/banded_8k.bin --n 256
 ```
 
-Output is one line per kernel:
+Output is one line per kernel (example below from a Colab T4 run):
 
 ```
-kernel=baseline m=4096 k=4096 n=256 nnz=167772 density=0.010000 time_ms=0.339 gflops=253.4 max_abs_err=3.2e-07 max_rel_err=1.8e-06 rel_l2_err=2.1e-07
-kernel=memopt   m=4096 k=4096 n=256 nnz=167772 density=0.010000 time_ms=0.341 gflops=251.9 max_abs_err=3.2e-07 max_rel_err=1.8e-06 rel_l2_err=2.1e-07
+kernel=baseline m=4096 k=4096 n=256 nnz=167686 density=0.009995 time_ms=0.3118 gflops=275.32 max_abs_err=4.768e-06 max_rel_err=9.153e-05 rel_l2_err=1.241e-07
+kernel=memopt   m=4096 k=4096 n=256 nnz=167686 density=0.009995 time_ms=0.3127 gflops=274.53 max_abs_err=4.768e-06 max_rel_err=9.153e-05 rel_l2_err=1.241e-07
 ```
 
 A correct run has `rel_l2_err < 1e-4` (Phase 1 DoD). Observed values are
