@@ -12,22 +12,35 @@ where Nsight Compute counters are accessible).
 | # | Task                                                              | Phase | Status         |
 |---|-------------------------------------------------------------------|-------|----------------|
 | 1 | Baseline CSR SpMM on CUDA cores                                   | 1     | ✅ done         |
-| 2 | Memory optimization (coalescing, shared-mem tiling, register reuse) | 1–2 | 🟡 in progress (coalescing/warp-per-row done; tiling + register reuse next) |
+| 2 | Memory optimization (coalescing, shared-mem tiling, register reuse) | 1–2 | ✅ done (6 kernels shipped; DoD 2/4 cells pass — empirical cap on m=4096 documented in week 2 report) |
 | 3 | Tensor Core acceleration (block-sparse on T4)                     | 3     | ⏳ not started  |
 | 4 | Hybrid execution (CUDA cores vs. Tensor Cores)                    | 4     | ⏳ not started  |
 | 5 | Memory-aware execution (unified memory / multi-GPU)               | 5     | ⏳ not started  |
 | 6 | Performance evaluation across patterns and sizes                  | all   | 🟡 ongoing      |
 | 7 | Final integrated system                                           | 6     | ⏳ not started  |
 
-**Latest report:** [reports/week1.md](reports/week1.md) — Phase 1 close-out
-with `ncu` profiling findings on Colab T4.
+**Latest report:** [reports/week2.md](reports/week2.md) — Phase 2 close-out
+with three-run triangulation on Colab T4 and full ncu profile set across
+six Phase 2 kernels.
 
-**Headline result from Phase 1:** memopt's win/loss vs. baseline is not
-random — it tracks the kernel's bottleneck. memopt wins in the
-**latency-bound** regime (short rows, sparse) by amortising scheduling
-overhead; baseline wins in the **bandwidth-bound** regime (long rows,
-dense) thanks to higher occupancy. DRAM throughput is 39 % in memopt's
-win cell and 90 % in its loss cell — the cleanest signal we could ask for.
+**Headline result from Phase 2:** the per-cell winner depends on the
+bottleneck regime — `tiled_v3` dominates bandwidth-bound m=8192 cells
+(2.04× and 2.56× over baseline), `tiled_v2` wins overhead-dominated
+small-m / very-sparse cells, `tiled_v4` wins large-m / dense cells where
+the wider per-warp work amortises. The DoD bar of ≥2× is met on the two
+m=8192 cells but not on the two m=4096 cells (median 1.27× / 1.32× across
+six kernels and three runs). The ncu evidence shows m=4096 is
+compute-bound on T4 (B fits in L2, AI ≈ 29 FLOP/byte, above the 25
+FLOP/byte roofline balance) with the baseline already at ~5% of T4 peak,
+which is why pure CUDA-core SpMM caps out at ~1.5× there. The remaining
+gap is the first thing Phase 3 (Tensor Cores) will be evaluated against.
+
+**Headline result from Phase 1** (preserved): memopt's win/loss vs.
+baseline is not random — it tracks the kernel's bottleneck. memopt wins
+in the **latency-bound** regime (short rows, sparse) by amortising
+scheduling overhead; baseline wins in the **bandwidth-bound** regime
+(long rows, dense) thanks to higher occupancy. DRAM throughput is 39 %
+in memopt's win cell and 90 % in its loss cell.
 
 ---
 
@@ -39,13 +52,20 @@ src/
   utils.h                     CUDA / cuSPARSE error checks, GpuTimer
   kernels/
     spmm_baseline.{h,cu}      one-thread-per-output baseline
-    spmm_memopt.{h,cu}        warp-per-row, coalesced reads
+    spmm_memopt.{h,cu}        warp-per-row, coalesced reads (Phase 1)
+    spmm_memopt_v2.{h,cu}     Phase 2.1 — register-footprint reduction (no-op)
+    spmm_tiled.{h,cu}         Phase 2.2 — col-tile streaming, shmem-staged CSR
+    spmm_tiled_v2.{h,cu}      Phase 2.3+2.4 — wider tile + float4 (regression)
+    spmm_tiled_v3.{h,cu}      Phase 2.5 — fix for v2 regression
+    spmm_tiled_v4.{h,cu}      Phase 2.6 — single-pass 8-cols/lane (m=4096 negative result)
   bench/
     harness.cu                benchmark + cuSPARSE correctness check
 scripts/
   gen_matrices.py             synthetic CSR generator (uniform/banded/block/power-law)
 reports/
   week1.md                    Phase 1 weekly report
+  week2.md                    Phase 2 weekly report
+  phase2_*.md                 per-subtask verification recipes
 colabRunner.ipynb             Colab notebook for ncu profiling
 Makefile                      targets sm_75 (T4)
 ```

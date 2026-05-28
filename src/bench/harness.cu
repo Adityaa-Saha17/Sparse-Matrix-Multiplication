@@ -1,7 +1,12 @@
-// Phase 1 benchmark harness.
+// Benchmark harness — Phases 1, 2, and 3.
 //   - Generates (or loads) a sparse matrix A and a dense matrix B.
-//   - Runs the project's baseline SpMM kernel and cuSPARSE's cusparseSpMM.
+//   - Runs the project's SpMM kernels and cuSPARSE's cusparseSpMM as reference.
 //   - Reports correctness (max |abs| / |rel| error) and median time + GFLOPS.
+//
+// Phase 3 additions (--kernel wmma):
+//   - Builds BSR from CSR on the host.
+//   - Converts B to FP16 once (excluded from timed loop).
+//   - Benchmarks spmm_wmma (Tensor Core kernel) and reports BSR fill-in stats.
 
 #include <algorithm>
 #include <cmath>
@@ -14,9 +19,11 @@
 #include <vector>
 
 #include <cuda_runtime.h>
+#include <cuda_fp16.h>
 #include <cusparse.h>
 
 #include "../csr.h"
+#include "../bsr.h"
 #include "../kernels/spmm_baseline.h"
 #include "../kernels/spmm_memopt.h"
 #include "../kernels/spmm_memopt_v2.h"
@@ -24,6 +31,7 @@
 #include "../kernels/spmm_tiled_v2.h"
 #include "../kernels/spmm_tiled_v3.h"
 #include "../kernels/spmm_tiled_v4.h"
+#include "../kernels/spmm_wmma.h"
 #include "../utils.h"
 
 namespace {
@@ -37,7 +45,7 @@ struct Args {
     int   warmup  = 3;
     int   iters   = 10;
     std::string mtx_path;  // optional binary CSR file; overrides synthetic
-    std::string kernel = "both";  // "baseline" | "memopt" | "memopt_v2" | "tiled" | "tiled_v2" | "tiled_v3" | "tiled_v4" | "both" | "all"
+    std::string kernel = "both";  // "baseline" | "memopt" | "memopt_v2" | "tiled" | "tiled_v2" | "tiled_v3" | "tiled_v4" | "wmma" | "both" | "all"
 };
 
 void print_usage(const char* prog) {
@@ -52,12 +60,13 @@ void print_usage(const char* prog) {
         "  --iters INT      timed iterations       (default 10)\n"
         "  --bin PATH       load CSR from binary file (overrides --m/--k/--density)\n"
         "  --kernel STR     'baseline' | 'memopt' | 'memopt_v2' | 'tiled' | 'tiled_v2'\n"
-        "                   | 'tiled_v3' | 'tiled_v4' | 'both' | 'all'\n"
+        "                   | 'tiled_v3' | 'tiled_v4' | 'wmma' | 'both' | 'all'\n"
         "                   'both' = baseline + memopt (Phase 1 default)\n"
         "                   'all'  = baseline + memopt + memopt_v2 + tiled + tiled_v2\n"
-        "                            + tiled_v3 + tiled_v4\n"
-        "                            (Phase 2 ablation: all seven kernels side by side)\n"
+        "                            + tiled_v3 + tiled_v4 + wmma\n"
+        "                            (full ablation: all eight kernels side by side)\n"
         "                   note: tiled_v2 requires N %% 128 == 0\n"
+        "                   note: wmma requires sm_75+ and N %% 16 == 0\n"
         "                   default: 'both'\n",
         prog);
 }
@@ -224,6 +233,46 @@ KernelResult run_and_benchmark(const std::string& name,
     return {name, ms, static_cast<float>(gflops), err.max_abs, err.max_rel, err.rel_l2};
 }
 
+// Phase 3: benchmark the WMMA kernel which takes BSR + FP16 B instead of CSR + FP32 B.
+// BSR and d_B_fp16 must already be prepared (construction time is excluded from timing).
+// FLOPS are computed against the original nnz (not the padded block count) so that
+// speedup numbers are apples-to-apples with the CSR kernels.
+KernelResult run_and_benchmark_bsr(const std::string& name,
+                                    void (*kernel_fn)(const spmm::BSR&, const half*, float*, int),
+                                    int M, int N, int original_nnz,
+                                    int warmup, int iters,
+                                    const spmm::BSR& d_bsr, const half* d_B_fp16,
+                                    float* d_C, const std::vector<float>& h_C_ref) {
+    // Warmup
+    for (int i = 0; i < warmup; ++i) {
+        kernel_fn(d_bsr, d_B_fp16, d_C, N);
+    }
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    // Timed runs
+    std::vector<float> times(iters);
+    GpuTimer t;
+    for (int i = 0; i < iters; ++i) {
+        t.start();
+        kernel_fn(d_bsr, d_B_fp16, d_C, N);
+        t.stop();
+        times[i] = t.elapsed_ms();
+    }
+    float ms = median(times);
+
+    // Copy result and compare
+    std::vector<float> h_C(static_cast<size_t>(M) * N);
+    CUDA_CHECK(cudaMemcpy(h_C.data(), d_C, static_cast<size_t>(M) * N * sizeof(float),
+                          cudaMemcpyDeviceToHost));
+    ErrorStats err = compare(h_C, h_C_ref);
+
+    // FLOPS: 2 * original_nnz * N (same denominator as CSR kernels for fair comparison).
+    double flops  = 2.0 * static_cast<double>(original_nnz) * N;
+    double gflops = flops / (static_cast<double>(ms) * 1.0e6);
+
+    return {name, ms, static_cast<float>(gflops), err.max_abs, err.max_rel, err.rel_l2};
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -305,6 +354,46 @@ int main(int argc, char** argv) {
         results.push_back(run_and_benchmark("tiled_v4", spmm::spmm_tiled_v4,
                                             args.m, args.n, args.warmup, args.iters,
                                             d_A, d_B, d_C_ours, h_C_ref));
+    }
+
+    // ── Phase 3: Tensor Core / WMMA kernel (BSR format) ────────────────────
+    if (args.kernel == "wmma" || args.kernel == "all") {
+        if (args.n % 16 != 0) {
+            std::fprintf(stderr,
+                "wmma requires --n divisible by 16 (got n=%d). Skipping.\n",
+                args.n);
+        } else {
+            // Build BSR on host from the same h_A used above.
+            spmm::BSR_host h_bsr = spmm::bsr_from_csr_host(h_A);
+            spmm::BSR_stats bsr_stats = spmm::bsr_compute_stats(h_bsr);
+
+            // Print fill-in statistics so the user can see the cost of block padding.
+            std::printf(
+                "bsr_stats blocks=%d stored_elems=%ld original_nnz=%d "
+                "fill_in_ratio=%.2f block_density=%.4f\n",
+                bsr_stats.num_blocks, bsr_stats.stored_elements,
+                bsr_stats.original_nnz, bsr_stats.fill_in_ratio,
+                bsr_stats.block_density);
+
+            // Upload BSR to device.
+            spmm::BSR d_bsr = spmm::bsr_to_device(h_bsr);
+
+            // Convert d_B (FP32) to FP16 once — excluded from the timed loop.
+            half* d_B_fp16 = nullptr;
+            const size_t b_fp16_bytes = static_cast<size_t>(args.k) * args.n * sizeof(half);
+            CUDA_CHECK(cudaMalloc(&d_B_fp16, b_fp16_bytes));
+            spmm::float_to_half(d_B, d_B_fp16, args.k * args.n);
+            CUDA_CHECK(cudaDeviceSynchronize());
+
+            results.push_back(run_and_benchmark_bsr(
+                "wmma", spmm::spmm_wmma,
+                args.m, args.n, h_A.nnz,
+                args.warmup, args.iters,
+                d_bsr, d_B_fp16, d_C_ours, h_C_ref));
+
+            CUDA_CHECK(cudaFree(d_B_fp16));
+            spmm::bsr_free_device(d_bsr);
+        }
     }
 
     // Report results
