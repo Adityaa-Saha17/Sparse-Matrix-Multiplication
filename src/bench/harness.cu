@@ -23,6 +23,7 @@
 #include "../kernels/spmm_tiled.h"
 #include "../kernels/spmm_tiled_v2.h"
 #include "../kernels/spmm_tiled_v3.h"
+#include "../kernels/spmm_tiled_v4.h"
 #include "../utils.h"
 
 namespace {
@@ -36,7 +37,7 @@ struct Args {
     int   warmup  = 3;
     int   iters   = 10;
     std::string mtx_path;  // optional binary CSR file; overrides synthetic
-    std::string kernel = "both";  // "baseline" | "memopt" | "memopt_v2" | "tiled" | "tiled_v2" | "tiled_v3" | "both" | "all"
+    std::string kernel = "both";  // "baseline" | "memopt" | "memopt_v2" | "tiled" | "tiled_v2" | "tiled_v3" | "tiled_v4" | "both" | "all"
 };
 
 void print_usage(const char* prog) {
@@ -51,10 +52,11 @@ void print_usage(const char* prog) {
         "  --iters INT      timed iterations       (default 10)\n"
         "  --bin PATH       load CSR from binary file (overrides --m/--k/--density)\n"
         "  --kernel STR     'baseline' | 'memopt' | 'memopt_v2' | 'tiled' | 'tiled_v2'\n"
-        "                   | 'tiled_v3' | 'both' | 'all'\n"
+        "                   | 'tiled_v3' | 'tiled_v4' | 'both' | 'all'\n"
         "                   'both' = baseline + memopt (Phase 1 default)\n"
-        "                   'all'  = baseline + memopt + memopt_v2 + tiled + tiled_v2 + tiled_v3\n"
-        "                            (Phase 2 ablation: all six kernels side by side)\n"
+        "                   'all'  = baseline + memopt + memopt_v2 + tiled + tiled_v2\n"
+        "                            + tiled_v3 + tiled_v4\n"
+        "                            (Phase 2 ablation: all seven kernels side by side)\n"
         "                   note: tiled_v2 requires N %% 128 == 0\n"
         "                   default: 'both'\n",
         prog);
@@ -296,6 +298,11 @@ int main(int argc, char** argv) {
     }
     if (args.kernel == "tiled_v3" || args.kernel == "all") {
         results.push_back(run_and_benchmark("tiled_v3", spmm::spmm_tiled_v3,
+                                            args.m, args.n, args.warmup, args.iters,
+                                            d_A, d_B, d_C_ours, h_C_ref));
+    }
+    if (args.kernel == "tiled_v4" || args.kernel == "all") {
+        results.push_back(run_and_benchmark("tiled_v4", spmm::spmm_tiled_v4,
                                             args.m, args.n, args.warmup, args.iters,
                                             d_A, d_B, d_C_ours, h_C_ref));
     }

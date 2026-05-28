@@ -19,6 +19,7 @@ SRCS = src/csr.cu \
        src/kernels/spmm_tiled.cu \
        src/kernels/spmm_tiled_v2.cu \
        src/kernels/spmm_tiled_v3.cu \
+       src/kernels/spmm_tiled_v4.cu \
        src/bench/harness.cu
 
 OBJS = $(SRCS:%.cu=$(BUILD_DIR)/%.o)
