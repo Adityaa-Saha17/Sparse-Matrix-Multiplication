@@ -89,7 +89,9 @@ roofline permits. The honest ceiling is the **memory roof**, not the flop peak.
   the 4 MB L2**, so B is refetched and the *real* traffic is several × the
   compulsory minimum → real AI is lower → the real roof is far below the
   optimistic 4 958 GFLOP/s, and the kernel is close to *that* lower line. The
-  fixed ncu cells (below) will pin the true `dram__bytes` and collapse this gap.
+  fixed ncu cells (below) pinned the true traffic: **250.6 MB measured vs
+  22.2 MB compulsory (11.3×)** → real AI 1.37 → the A2 winner is at **86% of its
+  real roof**.
 
 - **Compute / L2-bound (AI > 25.4):** the three d=0.05 cells at m≥4096, including
   the **m=4096 d=0.05 DoD cell that never reached ≥2×**. Their B fits (m=4096,
@@ -97,23 +99,25 @@ roofline permits. The honest ceiling is the **memory roof**, not the flop peak.
   SM-issue throughput are. The DRAM roofline cannot bound these (they sit far
   under the flat FP32 ceiling because that ceiling is also not their limiter).
   This is the gap that Phase 2's `tiled_v*` work hit and could not pass: it is an
-  **L2-bandwidth ceiling, not an un-optimized kernel.** Confirming the exact L2
-  throughput is the single most valuable missing measurement, and is exactly what
-  the now-fixed ncu profiling delivers.
+  **cache-bandwidth ceiling, not an un-optimized kernel.** The now-fixed ncu
+  profiling confirms it: DRAM at **10.3%**, L1/TEX at **82.0%**, L2 at **66.2%**
+  on C2-tiled_v3 — the binding resource is the on-chip cache path, with at most
+  ~1.22× of theoretical headroom remaining.
 
 ---
 
 ## The three empirical-vs-theory gaps, and what closes each
 
-| # | Gap | Diagnosis | Closer (this week) |
-|---|---|---|---|
-| 1 | m=4096/8192 d=0.05 cap at ~1.3× / 6% of peak | compute & L2-bandwidth bound; DRAM roof not binding | fixed ncu cells → measure L2 throughput & SM issue to confirm the ceiling is L2 BW, not slack |
-| 2 | memory-bound cells look like "8% of roof" | optimistic model ignores B-refetch past the 4 MB L2 | fixed ncu cells → real `dram__bytes` gives true AI; Phase-1 ncu already shows ~90% BW |
-| 3 | WMMA loses every random-sparse DoD cell (0.1–0.9×) | 20–226× BSR fill-in on *random* sparsity erases the 8× TC compute edge | structured re-measurement (below) on block-diagonal → fill-in→1×, the regime TC is built for |
+| # | Gap | Diagnosis | Closer (this week) | **Result (measured)** |
+|---|---|---|---|---|
+| 1 | m=4096/8192 d=0.05 cap at ~1.3× / 6% of peak | compute & L2-bandwidth bound; DRAM roof not binding | fixed ncu cells → measure L2 throughput & SM issue | **CLOSED** — C2-tiled_v3: DRAM **10.3%**, L1/TEX **82.0%**, L2 **66.2%** → cache-BW bound; max cache headroom ≈ 1/0.82 = **1.22×**, matching the observed ~1.3× cap |
+| 2 | memory-bound cells look like "8% of roof" | optimistic model ignores B-refetch past the 4 MB L2 | fixed ncu cells → real DRAM bytes give true AI | **CLOSED** — A2-tiled_v3 moves **250.6 MB** vs 22.2 MB compulsory (**11.3×** refetch) → real AI 1.37, real roof 439 GFLOP/s, measured 377.6 = **86% of the real roof** |
+| 3 | WMMA loses every random-sparse DoD cell (0.1–0.9×) | 20–226× BSR fill-in on *random* sparsity erases the 8× TC compute edge | structured re-measurement on block-diagonal (fill-in→1×) | **CLOSED** — fill-in 1.00; WMMA **868 GFLOP/s at m=4096, 1.13× the best FP32 kernel** (fastest overall); 780 at m=8192 (0.94×, competitive) |
 
-None of these is closed by writing a faster kernel — they are closed by **better
-measurement and a correct theoretical frame**. Two of the three "misses" turn out
-to be hardware ceilings (L2 BW; FP16 fill-in physics), not optimization debt.
+None of these was closed by writing a faster kernel — they were closed by
+**better measurement and a correct theoretical frame**. Two of the three
+"misses" turned out to be hardware ceilings (cache BW; FP16 fill-in physics),
+not optimization debt — and the measured counters above now prove it.
 
 ---
 
@@ -134,10 +138,45 @@ shell-init: error retrieving current directory: getcwd: cannot access parent dir
 **Fix** (`colabRunner.ipynb` cell 46): `os.chdir('/content')` *before* the
 destructive `rm`, and `os.chdir('/content/spmm')` *after* the rebuild, so the
 kernel always holds a live cwd. The Phase-3 ncu cells additionally pin
-`%cd /content/spmm` defensively. All Phase 1/2/3 ncu profiles are now runnable in
-a single clean session — these are the counters (`dram__bytes.sum`,
-`lts__t_sectors` for L2, `sm__throughput`) that turn gaps #1 and #2 from
-*argued* into *measured*.
+`%cd /content/spmm` defensively. All Phase 1/2/3 ncu profiles now run in a
+single clean session — re-run on Colab T4 2026-06-10, all cells succeeded.
+
+**Measured Speed-of-Light summary** (extracted reproducibly from the notebook by
+[`scripts/ncu_extract.py`](../scripts/ncu_extract.py) → full table in
+[`reports/data/ncu_sol.csv`](data/ncu_sol.csv); DRAM bytes derived as
+DRAM% × 320 GB/s × duration):
+
+| Cell | Kernel | DRAM % | L1/TEX % | L2 % | SM % | Duration | Measured DRAM | Binding resource |
+|---|---|---|---|---|---|---|---|---|
+| A1 m=8192 d=0.01 | baseline | **90.1** | 76.4 | 44.9 | 76.0 | 1.85 ms | 533.6 MB | DRAM |
+| A2 m=8192 d=0.01 | memopt_v2 | **85.3** | 69.6 | 39.8 | 67.6 | 2.06 ms | 562.4 MB | DRAM |
+| A2 m=8192 d=0.01 | tiled_v2 | **85.0** | 69.3 | 59.3 | 18.8 | 1.35 ms | 367.1 MB | DRAM |
+| A2 m=8192 d=0.01 | tiled_v3 (winner) | 65.3 | **78.8** | 66.3 | 60.6 | 1.20 ms | 250.6 MB | mixed DRAM+cache |
+| B2 m=4096 d=0.001 | tiled_v3 | **79.1** | 53.6 | 40.1 | 47.5 | 61.8 µs | 15.6 MB | DRAM (short kernel) |
+| C1 m=4096 d=0.01 | tiled_v3 | 26.9 | **79.4** | 64.6 | 60.0 | 307.6 µs | 26.5 MB | L1/L2 cache BW |
+| C2 m=4096 d=0.05 | tiled_v3 | 10.3 | **82.0** | 66.2 | 61.5 | 1.44 ms | 47.3 MB | **L1/L2 cache BW** |
+| C2 m=4096 d=0.05 | tiled_v4 | 8.0 | **77.5** | 61.9 | 47.4 | 1.51 ms | 38.8 MB | L1/L2 cache BW |
+| C2 m=4096 d=0.05 | wmma (random) | 51.4 | **98.6** | 30.8 | 28.4 | 4.13 ms | 679.3 MB | **L1/TEX (fill-in)** |
+| A2 m=8192 d=0.01 | wmma (random) | 52.7 | **99.2** | 33.4 | 28.6 | 15.05 ms | 2 538 MB | **L1/TEX (fill-in)** |
+
+Three direct conclusions:
+
+1. **Gap #2 collapses.** The fastest A2 kernel (tiled_v3) moves **250.6 MB** of
+   DRAM traffic against a compulsory minimum of 22.2 MB — an **11.3× B-refetch
+   factor**, exactly the predicted L2-overflow behaviour (B = 8 MB > 4 MB L2).
+   Real AI = 343.6 MFLOP / 250.6 MB = **1.37 FLOP/B**, putting the *real* memory
+   roof at 439 GFLOP/s — and the measured 377.6 GFLOP/s is **86% of that roof**,
+   not the misleading "8.2% of the optimistic roof".
+2. **Gap #1 confirmed as a cache-bandwidth ceiling.** On the never-met DoD cell
+   (C2, m=4096 d=0.05) DRAM sits at **10.3%** — emphatically not the limiter —
+   while L1/TEX runs at **82.0%** and L2 at **66.2%**. Even a perfect kernel
+   capped by the same L1 path could gain at most ≈ 1/0.82 = **1.22×**, which is
+   why every tiled variant plateaued near 1.3× and ≥2× was physically out of
+   reach for this cell shape.
+3. **The WMMA random-sparse failure mode is now measured, not inferred:** L1/TEX
+   at **98.6–99.2%** (saturated) with SM at only ~28% — the Tensor Cores starve
+   while the L1 path streams 20–92× fill-in padding. DRAM bytes balloon to
+   2.5 GB on A2 (vs 0.25 GB for tiled_v3 on the same problem).
 
 ---
 
@@ -150,12 +189,27 @@ measured 0.10–0.91× — a property of the *input distribution*, not the kerne
 
 New cell (`colabRunner.ipynb` Step 13.5) re-runs the **unchanged** WMMA kernel on
 **block-diagonal matrices with a 16-element block**, which align exactly to the
-WMMA 16×16 tiles → `block_density = 1.0`, `fill_in_ratio ≈ 1.0`. This is the
-apples-to-apples theoretical regime where every FP16 FMA does useful work. It
-isolates the question "is the kernel slow, or is random sparsity the wrong input
-for Tensor Cores?" — expected result: WMMA goes from ~0.1–0.9× (random) to
-competitive-or-faster than the FP32 CSR kernels (structured). Run on Colab T4 to
-populate the structured-pattern numbers.
+WMMA 16×16 tiles → `block_density = 1.0`, `fill_in_ratio = 1.00` (measured). This
+is the apples-to-apples theoretical regime where every FP16 FMA does useful work,
+isolating the question "is the kernel slow, or is random sparsity the wrong input
+for Tensor Cores?"
+
+**Measured (Colab T4, 2026-06-10):**
+
+| Pattern | m=k | fill-in | wmma GFLOP/s | best FP32 kernel | FP32 GFLOP/s | wmma vs best FP32 |
+|---|---|---|---|---|---|---|
+| block-diagonal (structured) | 4096 | 1.00 | **868.0** | tiled_v2 | 771.6 | **1.13× — fastest kernel overall** |
+| block-diagonal (structured) | 8192 | 1.00 | 780.2 | tiled_v2 | 831.9 | 0.94× — competitive |
+| uniform random (reference) | 4096 d=0.05 | 19.99 | 203.7 | tiled_v3 | 496.0 | 0.41× |
+| uniform random (reference) | 4096 d=0.01 | 92.56 | 43.3 | tiled_v2 | 573.5 | 0.08× |
+
+The hypothesis holds: with fill-in at 1.00 the same binary goes from losing every
+random cell (0.08–0.9×) to **beating all seven FP32 CSR kernels at m=4096** and
+matching them at m=8192. 868 GFLOP/s is also the highest single-kernel number
+recorded anywhere in this project. The structured numbers are FP16/TC-bound
+rather than fill-in-bound — the remaining distance to the 65 TFLOP/s TC peak is
+the block-diagonal's *extreme* sparsity itself (AI is tiny: one 16×16 block per
+block-row), i.e. these cells are still memory-bound, but now on *useful* bytes.
 
 > No kernel code changed this week — both items above are re-measurements of the
 > existing Phase 1–3 binaries under corrected tooling and the correct input
@@ -165,21 +219,22 @@ populate the structured-pattern numbers.
 
 ## How close to theoretical are we, honestly
 
-| Regime | Cells | Theoretical limiter | Status vs. theory |
+| Regime | Cells | Theoretical limiter | Status vs. theory (measured) |
 |---|---|---|---|
-| Bandwidth-bound | m≥8192, mid density | 320 GB/s DRAM | **~90 % of DRAM roof** (Phase-1 ncu) — essentially at the limit |
-| L2 / compute-bound | m=4096–16384, d=0.05 | L2 bandwidth + SM issue | capped by L2 BW, **not** slack — fixed ncu will quantify the exact % |
-| Latency / overhead-bound | small m, very sparse | kernel-launch + scheduling | tiled_v2/v3 already amortize most overhead (34–61 % of optimistic roof) |
-| Tensor Core (random) | all WMMA random cells | FP16 fill-in physics | far from TC peak **by input, not kernel**; structured re-run isolates the real ceiling |
+| Bandwidth-bound | m≥8192, mid density | 320 GB/s DRAM | baseline at **90.1%** of DRAM roof; winner tiled_v3 at **86% of the real (refetch-corrected) roof** — essentially at the limit |
+| Cache-bound | m=4096–16384, d=0.05 | L1/TEX + L2 bandwidth | **L1/TEX 82%, L2 66%, DRAM 10%** — cache-BW ceiling confirmed; residual headroom ≤ **1.22×** |
+| Latency / overhead-bound | small m, very sparse | kernel-launch + scheduling | tiled_v3 at **79% DRAM** even on a 62 µs kernel — overhead mostly amortized |
+| Tensor Core (random) | all WMMA random cells | FP16 fill-in physics | **L1/TEX 98.6–99.2% saturated**, SM 28% — limited by input, not kernel |
+| Tensor Core (structured) | block-diagonal, block=16 | useful-byte bandwidth | **868 GFLOP/s, 1.13× the best FP32 kernel** at m=4096 — TC regime reached |
 
-**Bottom line:** the bandwidth-bound kernels are already within ~10 % of the T4
-memory roof — there is very little theoretical headroom left there, and the
-earlier "2.04×" is close to the best the hardware allows. The unmet ≥2× DoD bars
-(m=4096) are an **L2-bandwidth ceiling**, a hardware limit rather than an
-optimization gap, which the restored ncu profiling will now confirm with the L2
-throughput counters. The Tensor Core path's poor numbers are a property of
-*uniform-random* sparsity; on structured block-sparse it should approach its
-theoretical regime, which the new cell measures directly.
+**Bottom line:** the bandwidth-bound kernels sit at 85–90% of the DRAM roof
+(and 86% of the refetch-corrected roof for the A2 winner) — the earlier "2.04×"
+really is close to the best the hardware allows. The unmet ≥2× DoD bars (m=4096
+d≥0.01) are a **measured cache-bandwidth ceiling** (L1/TEX 82% vs DRAM 10%),
+a hardware limit rather than an optimization gap, with at most ~1.22× of
+theoretical headroom left on that path. The Tensor Core path's poor random
+numbers are measured to be L1/TEX fill-in saturation (99%), and on structured
+block-sparse the very same binary becomes the fastest kernel in the project.
 
 ---
 
@@ -192,16 +247,21 @@ theoretical regime, which the new cell measures directly.
 - `reports/figures/roofline_t4.png` — the T4 roofline with each cell's best CSR
   kernel placed on it.
 - `colabRunner.ipynb` — getcwd bug fixed (cell 46 + Phase-3 ncu cells); new
-  Step 13.5 structured block-sparse WMMA re-measurement.
+  Step 13.5 structured block-sparse WMMA re-measurement. **Re-run end-to-end on
+  Colab T4 (2026-06-10): all ncu cells succeeded, Step 13.5 populated.**
+- `scripts/ncu_extract.py` — parses the notebook's ncu outputs into
+  `reports/data/ncu_sol.csv` (SOL throughputs, measured DRAM bytes, real AI).
+- `reports/data/ncu_sol.csv` — the 17 extracted ncu profiles.
 
-## What to run next on Colab (single clean session)
+## Colab re-run checklist (done 2026-06-10)
 
-1. Re-run the Phase-3 section top-to-bottom — the ncu cells now succeed; capture
-   `dram__bytes` (gaps #1/#2) and L2 `lts__t_sectors` for the m=4096 d=0.05 cell.
-2. Run Step 13.5 to populate the structured block-diagonal WMMA numbers.
-3. `python3 scripts/roofline.py --plot` to refresh the table/plot, then drop the
-   measured `dram__bytes` into a real (non-compulsory) AI column to collapse the
-   "% of roof" gap for the memory-bound cells.
+1. ~~Re-run the Phase-3 section top-to-bottom~~ — **done**; ncu cells succeed,
+   DRAM/L1/L2 throughputs captured for all profiled cells (table above).
+2. ~~Run Step 13.5~~ — **done**; structured block-diagonal WMMA measured
+   (868 / 780 GFLOP/s).
+3. ~~Collapse the "% of roof" gap with measured traffic~~ — **done** via
+   `ncu_extract.py`: measured DRAM bytes give real AI (A2: 1.37 FLOP/B,
+   11.3× refetch) → A2 winner is at **86% of its real roof**.
 
 ---
 
