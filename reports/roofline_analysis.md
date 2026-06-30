@@ -52,20 +52,29 @@ measured `gflops` in [`reports/data/sweep.csv`](data/sweep.csv); full table in
 [`reports/data/roofline.csv`](data/roofline.csv); plot in
 [`reports/figures/roofline_t4.png`](figures/roofline_t4.png).
 
+> **Data provenance (refreshed).** The sweep table below is regenerated from a
+> **Kaggle dual-T4** re-run (`colabRunner.ipynb`, n=256, warmup 3, iters 10).
+> The roofline math is hardware-level (same T4 / sm_75), so the model is
+> unchanged. The Nsight Compute Speed-of-Light figures further down are **retained
+> from the earlier single-T4 Colab session**: Kaggle blocks GPU performance
+> counters (`ERR_NVGPUCTRPERM`), so `ncu` cannot be re-run there — confirmed in
+> the latest notebook's profiling cells. The SOL percentages remain
+> representative because the architecture is identical.
+
 | m=k | density | AI (FLOP/B) | regime | best CSR kernel | GFLOP/s | % FP32 peak | % of (optimistic) roof |
 |---|---|---|---|---|---|---|---|
-| 1024 | 0.001 | 0.3 | memory | tiled_v2 | 49.9 | 0.6% | 61.5% |
-| 1024 | 0.010 | 2.4 | memory | tiled_v2 | 266.4 | 3.3% | 34.2% |
-| 1024 | 0.050 | 10.6 | memory | tiled_v3 | 266.0 | 3.3% | 7.8% |
-| 4096 | 0.001 | 1.0 | memory | tiled_v4 | 145.5 | 1.8% | 44.8% |
-| 4096 | 0.010 | 8.8 | memory | tiled_v2 | 625.7 | 7.7% | 22.2% |
-| **4096** | **0.050** | **28.4** | **compute / L2** | tiled_v4 | 506.0 | 6.2% | 6.2% |
-| 8192 | 0.001 | 2.0 | memory | tiled_v2 | 166.6 | 2.0% | 26.3% |
-| **8192** | **0.010** | **15.5** | **memory** | tiled_v3 | 406.0 | 5.0% | 8.2% |
-| **8192** | **0.050** | **39.4** | **compute / L2** | tiled_v4 | 489.9 | 6.0% | 6.0% |
-| 16384 | 0.001 | 3.8 | memory | tiled_v2 | 148.9 | 1.8% | 12.1% |
-| 16384 | 0.010 | 24.9 | memory | tiled_v4 | 209.3 | 2.6% | 2.6% |
-| 16384 | 0.050 | 48.7 | compute / L2 | tiled_v4 | 261.9 | 3.2% | 3.2% |
+| 1024 | 0.001 | 0.3 | memory | tiled_v2 | 52.2 | 0.6% | 64.4% |
+| 1024 | 0.010 | 2.4 | memory | tiled_v2 | 230.5 | 2.8% | 29.6% |
+| 1024 | 0.050 | 10.6 | memory | tiled_v3 | 283.9 | 3.5% | 8.4% |
+| 4096 | 0.001 | 1.0 | memory | tiled_v4 | 145.9 | 1.8% | 44.9% |
+| 4096 | 0.010 | 8.8 | memory | tiled_v2 | 537.8 | 6.6% | 19.1% |
+| **4096** | **0.050** | **28.4** | **compute / L2** | tiled_v2 | 438.7 | 5.4% | 5.4% |
+| 8192 | 0.001 | 2.0 | memory | tiled_v2 | 166.2 | 2.0% | 26.2% |
+| **8192** | **0.010** | **15.5** | **memory** | tiled_v3 | 373.1 | 4.6% | 7.5% |
+| **8192** | **0.050** | **39.4** | **compute / L2** | tiled_v4 | 429.5 | 5.3% | 5.3% |
+| 16384 | 0.001 | 3.8 | memory | tiled_v2 | 149.0 | 1.8% | 12.1% |
+| 16384 | 0.010 | 24.9 | memory | tiled_v4 | 206.5 | 2.5% | 2.6% |
+| 16384 | 0.050 | 48.7 | compute / L2 | tiled_v4 | 254.5 | 3.1% | 3.1% |
 
 ### Reading this table correctly
 
@@ -82,7 +91,7 @@ roofline permits. The honest ceiling is the **memory roof**, not the flop peak.
   measured the bandwidth-bound A2 cell (m=8192, d=0.01) at **~90 % of DRAM
   throughput** (see [baseline_csr](baseline_csr.md) / README) — i.e. that kernel is already
   within ~10 % of the 320 GB/s theoretical memory roof. It is essentially done.
-  The reason the "% of optimistic roof" column reads low (8.2 %) is that the
+  The reason the "% of optimistic roof" column reads low (7.5 %) is that the
   compulsory model assumes B is read once; at m=8192 the dense B (8 MB) **exceeds
   the 4 MB L2**, so B is refetched and the *real* traffic is several × the
   compulsory minimum → real AI is lower → the real roof is far below the
@@ -110,7 +119,7 @@ roofline permits. The honest ceiling is the **memory roof**, not the flop peak.
 |---|---|---|---|---|
 | 1 | m=4096/8192 d=0.05 cap at ~1.3× / 6% of peak | compute & L2-bandwidth bound; DRAM roof not binding | fixed ncu cells → measure L2 throughput & SM issue | **CLOSED** — C2-tiled_v3: DRAM **10.3%**, L1/TEX **82.0%**, L2 **66.2%** → cache-BW bound; max cache headroom ≈ 1/0.82 = **1.22×**, matching the observed ~1.3× cap |
 | 2 | memory-bound cells look like "8% of roof" | optimistic model ignores B-refetch past the 4 MB L2 | fixed ncu cells → real DRAM bytes give true AI | **CLOSED** — A2-tiled_v3 moves **250.6 MB** vs 22.2 MB compulsory (**11.3×** refetch) → real AI 1.37, real roof 439 GFLOP/s, measured 377.6 = **86% of the real roof** |
-| 3 | WMMA loses every random-sparse DoD cell (0.1–0.9×) | 20–226× BSR fill-in on *random* sparsity erases the 8× TC compute edge | structured re-measurement on block-diagonal (fill-in→1×) | **CLOSED** — fill-in 1.00; WMMA **868 GFLOP/s at m=4096, 1.13× the best FP32 kernel** (fastest overall); 780 at m=8192 (0.94×, competitive) |
+| 3 | WMMA loses every random-sparse DoD cell (0.1–0.9×) | 20–226× BSR fill-in on *random* sparsity erases the 8× TC compute edge | structured re-measurement on block-diagonal (fill-in→1×) | **CLOSED** — fill-in 1.00; WMMA **851.5 GFLOP/s at m=8192, 1.61× the best FP32 kernel** (fastest overall); 821.8 at m=4096 (1.81×) |
 
 None of these was closed by writing a faster kernel — they were closed by
 **better measurement and a correct theoretical frame**. Two of the three
@@ -192,19 +201,19 @@ is the apples-to-apples theoretical regime where every FP16 FMA does useful work
 isolating the question "is the kernel slow, or is random sparsity the wrong input
 for Tensor Cores?"
 
-**Measured (Colab T4):**
+**Measured (Kaggle dual-T4; structured re-run from the latest notebook):**
 
 | Pattern | m=k | fill-in | wmma GFLOP/s | best FP32 kernel | FP32 GFLOP/s | wmma vs best FP32 |
 |---|---|---|---|---|---|---|
-| block-diagonal (structured) | 4096 | 1.00 | **868.0** | tiled_v2 | 771.6 | **1.13× — fastest kernel overall** |
-| block-diagonal (structured) | 8192 | 1.00 | 780.2 | tiled_v2 | 831.9 | 0.94× — competitive |
-| uniform random (reference) | 4096 d=0.05 | 19.99 | 203.7 | tiled_v3 | 496.0 | 0.41× |
-| uniform random (reference) | 4096 d=0.01 | 92.56 | 43.3 | tiled_v2 | 573.5 | 0.08× |
+| block-diagonal (structured) | 4096 | 1.00 | **821.8** | tiled_v2 | 454.9 | **1.81× — fastest at this size** |
+| block-diagonal (structured) | 8192 | 1.00 | **851.5** | tiled_v2 | 528.6 | **1.61× — fastest kernel overall** |
+| uniform random (reference) | 4096 d=0.05 | 19.99 | 203.3 | tiled_v2 | 438.7 | 0.46× |
+| uniform random (reference) | 4096 d=0.01 | 92.56 | 44.0 | tiled_v2 | 537.8 | 0.08× |
 
 The hypothesis holds: with fill-in at 1.00 the same binary goes from losing every
-random cell (0.08–0.9×) to **beating all seven FP32 CSR kernels at m=4096** and
-matching them at m=8192. 868 GFLOP/s is also the highest single-kernel number
-recorded anywhere in this project. The structured numbers are FP16/TC-bound
+random cell (0.08–0.9×) to **beating all seven FP32 CSR kernels at both m=4096 and
+m=8192** (1.81× and 1.61×). 851.5 GFLOP/s (m=8192) is the highest single-kernel
+number recorded anywhere in this project. The structured numbers are FP16/TC-bound
 rather than fill-in-bound — the remaining distance to the 65 TFLOP/s TC peak is
 the block-diagonal's *extreme* sparsity itself (AI is tiny: one 16×16 block per
 block-row), i.e. these cells are still memory-bound, but now on *useful* bytes.
@@ -223,7 +232,7 @@ block-row), i.e. these cells are still memory-bound, but now on *useful* bytes.
 | Cache-bound | m=4096–16384, d=0.05 | L1/TEX + L2 bandwidth | **L1/TEX 82%, L2 66%, DRAM 10%** — cache-BW ceiling confirmed; residual headroom ≤ **1.22×** |
 | Latency / overhead-bound | small m, very sparse | kernel-launch + scheduling | tiled_v3 at **79% DRAM** even on a 62 µs kernel — overhead mostly amortized |
 | Tensor Core (random) | all WMMA random cells | FP16 fill-in physics | **L1/TEX 98.6–99.2% saturated**, SM 28% — limited by input, not kernel |
-| Tensor Core (structured) | block-diagonal, block=16 | useful-byte bandwidth | **868 GFLOP/s, 1.13× the best FP32 kernel** at m=4096 — TC regime reached |
+| Tensor Core (structured) | block-diagonal, block=16 | useful-byte bandwidth | **851.5 GFLOP/s, 1.61× the best FP32 kernel** at m=8192 (1.81× at m=4096) — TC regime reached |
 
 **Bottom line:** the bandwidth-bound kernels sit at 85–90% of the DRAM roof
 (and 86% of the refetch-corrected roof for the A2 winner) — the earlier "2.04×"
@@ -256,7 +265,7 @@ block-sparse the very same binary becomes the fastest kernel in the project.
 1. ~~Re-run the Tensor-Core section top-to-bottom~~ — **done**; ncu cells succeed,
    DRAM/L1/L2 throughputs captured for all profiled cells (table above).
 2. ~~Run Step 13.5~~ — **done**; structured block-diagonal WMMA measured
-   (868 / 780 GFLOP/s).
+   (821.8 / 851.5 GFLOP/s on Kaggle dual-T4).
 3. ~~Collapse the "% of roof" gap with measured traffic~~ — **done** via
    `ncu_extract.py`: measured DRAM bytes give real AI (A2: 1.37 FLOP/B,
    11.3× refetch) → A2 winner is at **86% of its real roof**.

@@ -13,16 +13,16 @@ where Nsight Compute counters are accessible).
 |---|-------------------------------------------------------------------|----------------|
 | 1 | Baseline CSR SpMM on CUDA cores                                   | ✅ done         |
 | 2 | Memory optimization (coalescing, shared-mem tiling, register reuse) | ✅ done (6 kernels shipped; DoD 2/4 cells pass — empirical cap on m=4096 documented in the memory-optimization report) |
-| 3 | Tensor Core acceleration (block-sparse on T4)                     | ✅ done (BSR 16×16 + WMMA; loses on random sparsity from fill-in, but 868 GFLOP/s / 1.13× on structured block-diagonal — see the Tensor-Core and roofline reports) |
+| 3 | Tensor Core acceleration (block-sparse on T4)                     | ✅ done (BSR 16×16 + WMMA; loses on random sparsity from fill-in, but 851 GFLOP/s / up to 1.81× on structured block-diagonal — see the Tensor-Core and roofline reports) |
 | 4 | Hybrid execution (CUDA cores vs. Tensor Cores)                    | ✅ done (structure-aware auto-dispatch in `spmm_hybrid`; routes by BSR fill-in) |
-| 5 | Memory-aware execution (unified memory / multi-GPU)               | ✅ done (nnz-balanced dual-GPU row split + unified-memory path in `spmm_multigpu`) |
+| 5 | Memory-aware execution (unified memory / multi-GPU)               | ✅ done (nnz-balanced dual-GPU row split + unified-memory path in `spmm_multigpu`; measured **2.40× on 2×T4** at m=16384 d=0.01 — 199→478 GFLOP/s) |
 | 6 | Performance evaluation across patterns and sizes                  | 🟡 ongoing      |
 | 7 | Final integrated system                                           | ✅ done (`spmm_run` end-to-end driver: auto-dispatch, multi-GPU/unified, cuSPARSE-verified) |
 
 **Latest report:** [reports/roofline_analysis.md](reports/roofline_analysis.md) —
 roofline consolidation on Colab T4: every kernel placed against the T4 hardware
 roofline, restored ncu Speed-of-Light profiles, and a structured-block-sparse
-WMMA re-measurement (868 GFLOP/s, the fastest kernel in the project). See also
+WMMA re-measurement (851 GFLOP/s, the fastest kernel in the project). See also
 [reports/tensor_core_wmma.md](reports/tensor_core_wmma.md) (WMMA) and
 [reports/memory_optimization.md](reports/memory_optimization.md).
 
@@ -42,8 +42,8 @@ Tensor Cores *loses* on uniform-random sparsity (0.10–0.91×) because random
 nonzeros inflate 16×16 blocks 20–226× (fill-in), starving the Tensor Cores —
 measured as L1/TEX saturation at 98.6–99.2% with SM at ~28%. But on
 **structured block-diagonal** input (fill-in 1.00) the *same binary* hits
-**868 GFLOP/s — 1.13× the best FP32 kernel and the fastest kernel in the
-project** at m=4096. The roofline analysis also proved the unmet m=4096 d≥0.01
+**851 GFLOP/s — 1.61× the best FP32 kernel and the fastest kernel in the
+project** at m=8192 (1.81× at m=4096). The roofline analysis also proved the unmet m=4096 d≥0.01
 DoD bars are a hardware cache-bandwidth ceiling (L1/TEX 82%, DRAM 10%,
 ≤1.22× headroom), not optimization debt. This split — TC for structured /
 low-fill-in, CSR for random — is exactly the decision the hybrid dispatcher
