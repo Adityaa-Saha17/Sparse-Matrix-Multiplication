@@ -1,10 +1,10 @@
-# Week 1 — Baseline CSR SpMM + Memory Optimization
+# Baseline CSR SpMM + Memory Optimization
 
 **Project:** Architecture-aware Sparse Matrix Multiplication on NVIDIA GPUs.
 
 ---
 
-## What I did this week
+## What I did
 
 - Scaffolded the project (Makefile targeting `sm_75`, source layout under
   `src/`, scripts under `scripts/`).

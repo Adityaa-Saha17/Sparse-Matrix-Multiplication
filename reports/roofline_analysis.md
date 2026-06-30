@@ -1,30 +1,28 @@
-# Week 4 — Consolidation & Roofline: how close to theoretical are we? (Phase 1–3 polish)
+# Consolidation & Roofline: how close to theoretical are we?
 
 **Project:** Architecture-aware Sparse Matrix Multiplication on NVIDIA GPUs.
-**Week dates:** 2026-06-03 to 2026-06-09.
-**Scope change:** instead of starting Phase 4 (hybrid CUDA/Tensor-Core dispatch),
-this week consolidates the three weeks already done and measures every kernel
-against the **T4 hardware roofline** — i.e. how close the empirical numbers are
-to what the hardware can theoretically deliver — then fixes the data-quality
-gaps that were blocking that comparison.
+**Focus:** this consolidation measures every kernel against the **T4 hardware
+roofline** — i.e. how close the empirical numbers are to what the hardware can
+theoretically deliver — then fixes the data-quality gaps that were blocking that
+comparison.
 
 ---
 
-## Why this week
+## Why this consolidation
 
-The Phase 1–3 reports established *relative* speedups (kernel vs. baseline) but
+The the CSR and Tensor-Core work reports established *relative* speedups (kernel vs. baseline) but
 never anchored them to an *absolute* ceiling. "tiled_v3 is 2.04× baseline" does
 not say whether 2.04× is near the hardware limit or leaving 5× on the table. Two
 loose ends made the absolute comparison impossible:
 
 1. **No theoretical reference.** Speedups were never placed on a roofline, so
    "good" and "capped" were asserted, not shown.
-2. **The Phase-3 ncu profiles never ran.** Every Nsight Compute cell in the
+2. **The Tensor-Core ncu profiles never ran.** Every Nsight Compute cell in the
    Colab notebook died with `getcwd: cannot access parent directories`, so the
    actual memory-traffic and throughput counters that would *prove* where each
    kernel sits were missing.
 
-This week closes both, and adds the one re-measurement that shows the Tensor
+This consolidation closes both, and adds the one re-measurement that shows the Tensor
 Core path reaching its theoretical regime.
 
 ---
@@ -43,7 +41,7 @@ These anchor every "% of theoretical" figure below.
 
 ---
 
-## The roofline (computed from the Week-2 full sweep)
+## The roofline (computed from the full memory-optimization sweep)
 
 Arithmetic intensity uses the **compulsory** DRAM-traffic model — every operand
 read/written exactly once: `bytes = 8·nnz + 4(m+1) + 4kN + 4mN`,
@@ -80,9 +78,9 @@ roofline permits. The honest ceiling is the **memory roof**, not the flop peak.
 **The cells split into two physical regimes at the ridge:**
 
 - **Memory-bound (AI < 25.4):** every cell except the three d=0.05 large-m ones.
-  Here the binding resource is bandwidth. The Phase-1 ncu profile already
+  Here the binding resource is bandwidth. The baseline ncu profile already
   measured the bandwidth-bound A2 cell (m=8192, d=0.01) at **~90 % of DRAM
-  throughput** (see [week1](week1.md) / README) — i.e. that kernel is already
+  throughput** (see [baseline_csr](baseline_csr.md) / README) — i.e. that kernel is already
   within ~10 % of the 320 GB/s theoretical memory roof. It is essentially done.
   The reason the "% of optimistic roof" column reads low (8.2 %) is that the
   compulsory model assumes B is read once; at m=8192 the dense B (8 MB) **exceeds
@@ -98,7 +96,7 @@ roofline permits. The honest ceiling is the **memory roof**, not the flop peak.
   B=4 MB) or nearly fits in L2, so DRAM is *not* the limiter — L2 bandwidth and
   SM-issue throughput are. The DRAM roofline cannot bound these (they sit far
   under the flat FP32 ceiling because that ceiling is also not their limiter).
-  This is the gap that Phase 2's `tiled_v*` work hit and could not pass: it is an
+  This is the gap that memory optimization's `tiled_v*` work hit and could not pass: it is an
   **cache-bandwidth ceiling, not an un-optimized kernel.** The now-fixed ncu
   profiling confirms it: DRAM at **10.3%**, L1/TEX at **82.0%**, L2 at **66.2%**
   on C2-tiled_v3 — the binding resource is the on-chip cache path, with at most
@@ -108,7 +106,7 @@ roofline permits. The honest ceiling is the **memory roof**, not the flop peak.
 
 ## The three empirical-vs-theory gaps, and what closes each
 
-| # | Gap | Diagnosis | Closer (this week) | **Result (measured)** |
+| # | Gap | Diagnosis | Closer | **Result (measured)** |
 |---|---|---|---|---|
 | 1 | m=4096/8192 d=0.05 cap at ~1.3× / 6% of peak | compute & L2-bandwidth bound; DRAM roof not binding | fixed ncu cells → measure L2 throughput & SM issue | **CLOSED** — C2-tiled_v3: DRAM **10.3%**, L1/TEX **82.0%**, L2 **66.2%** → cache-BW bound; max cache headroom ≈ 1/0.82 = **1.22×**, matching the observed ~1.3× cap |
 | 2 | memory-bound cells look like "8% of roof" | optimistic model ignores B-refetch past the 4 MB L2 | fixed ncu cells → real DRAM bytes give true AI | **CLOSED** — A2-tiled_v3 moves **250.6 MB** vs 22.2 MB compulsory (**11.3×** refetch) → real AI 1.37, real roof 439 GFLOP/s, measured 377.6 = **86% of the real roof** |
@@ -123,10 +121,10 @@ not optimization debt — and the measured counters above now prove it.
 
 ## Re-measurement #1 — restored ncu profiling (data-quality fix)
 
-**Bug:** the Phase-3 re-clone cell ran `rm -rf spmm` while the notebook kernel's
+**Bug:** the Tensor-Core re-clone cell ran `rm -rf spmm` while the notebook kernel's
 working directory was still *inside* `/content/spmm` (set by an earlier `%cd`).
 Deleting the cwd out from under the kernel left every subsequent `!` shell cell
-unable to `getcwd()`, so all twelve Phase-2 and both Phase-3 ncu cells failed —
+unable to `getcwd`, so all twelve memory-optimization and both Tensor-Core ncu cells failed —
 including the two that *claimed* to "use absolute paths" (the absolute path was
 treating a symptom; the shell itself could not start). Captured failure:
 
@@ -137,9 +135,9 @@ shell-init: error retrieving current directory: getcwd: cannot access parent dir
 
 **Fix** (`colabRunner.ipynb` cell 46): `os.chdir('/content')` *before* the
 destructive `rm`, and `os.chdir('/content/spmm')` *after* the rebuild, so the
-kernel always holds a live cwd. The Phase-3 ncu cells additionally pin
-`%cd /content/spmm` defensively. All Phase 1/2/3 ncu profiles now run in a
-single clean session — re-run on Colab T4 2026-06-10, all cells succeeded.
+kernel always holds a live cwd. The Tensor-Core ncu cells additionally pin
+`%cd /content/spmm` defensively. All all CSR and Tensor-Core ncu profiles now run in a
+single clean session — re-run on Colab T4, all cells succeeded.
 
 **Measured Speed-of-Light summary** (extracted reproducibly from the notebook by
 [`scripts/ncu_extract.py`](../scripts/ncu_extract.py) → full table in
@@ -194,7 +192,7 @@ is the apples-to-apples theoretical regime where every FP16 FMA does useful work
 isolating the question "is the kernel slow, or is random sparsity the wrong input
 for Tensor Cores?"
 
-**Measured (Colab T4, 2026-06-10):**
+**Measured (Colab T4):**
 
 | Pattern | m=k | fill-in | wmma GFLOP/s | best FP32 kernel | FP32 GFLOP/s | wmma vs best FP32 |
 |---|---|---|---|---|---|---|
@@ -211,8 +209,8 @@ rather than fill-in-bound — the remaining distance to the 65 TFLOP/s TC peak i
 the block-diagonal's *extreme* sparsity itself (AI is tiny: one 16×16 block per
 block-row), i.e. these cells are still memory-bound, but now on *useful* bytes.
 
-> No kernel code changed this week — both items above are re-measurements of the
-> existing Phase 1–3 binaries under corrected tooling and the correct input
+> No kernel code changed in this consolidation — both items above are re-measurements of the
+> existing the CSR and Tensor-Core work binaries under corrected tooling and the correct input
 > regime, per the "re-measure + re-analyze" scope.
 
 ---
@@ -241,21 +239,21 @@ block-sparse the very same binary becomes the fastest kernel in the project.
 ## What changed in the repo
 
 - `scripts/roofline.py` — reproducible roofline analysis; ingests harness logs or
-  the embedded Week-2 sweep, emits `reports/data/{sweep,roofline}.csv` and the
+  the embedded full sweep, emits `reports/data/{sweep,roofline}.csv` and the
   roofline plot.
 - `reports/data/sweep.csv`, `reports/data/roofline.csv` — raw + computed data.
 - `reports/figures/roofline_t4.png` — the T4 roofline with each cell's best CSR
   kernel placed on it.
-- `colabRunner.ipynb` — getcwd bug fixed (cell 46 + Phase-3 ncu cells); new
+- `colabRunner.ipynb` — getcwd bug fixed (cell 46 + Tensor-Core ncu cells); new
   Step 13.5 structured block-sparse WMMA re-measurement. **Re-run end-to-end on
-  Colab T4 (2026-06-10): all ncu cells succeeded, Step 13.5 populated.**
+  Colab T4 : all ncu cells succeeded, Step 13.5 populated.**
 - `scripts/ncu_extract.py` — parses the notebook's ncu outputs into
   `reports/data/ncu_sol.csv` (SOL throughputs, measured DRAM bytes, real AI).
 - `reports/data/ncu_sol.csv` — the 17 extracted ncu profiles.
 
-## Colab re-run checklist (done 2026-06-10)
+## Colab re-run checklist (done)
 
-1. ~~Re-run the Phase-3 section top-to-bottom~~ — **done**; ncu cells succeed,
+1. ~~Re-run the Tensor-Core section top-to-bottom~~ — **done**; ncu cells succeed,
    DRAM/L1/L2 throughputs captured for all profiled cells (table above).
 2. ~~Run Step 13.5~~ — **done**; structured block-diagonal WMMA measured
    (868 / 780 GFLOP/s).

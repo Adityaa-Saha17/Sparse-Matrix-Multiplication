@@ -15,9 +15,9 @@ constexpr int COL_TILE          = 128;
 constexpr int NNZ_TILE          = 64;
 constexpr int COLS_PER_LANE     = COL_TILE / 32;            // 4
 
-// Phase 2.5 kernel. See spmm_tiled_v3.h for the rationale and the ncu
+// Refined tiled kernel. See spmm_tiled_v3.h for the rationale and the ncu
 // evidence motivating the change. Algorithm shape is identical to
-// spmm_tiled (Phase 2.2); only COL_TILE and COLS_PER_LANE differ.
+// spmm_tiled; only COL_TILE and COLS_PER_LANE differ.
 __global__ __launch_bounds__(THREADS_PER_BLOCK, 4)
 void spmm_csr_tiled_v3_kernel(int M, int N,
                               const int*   __restrict__ row_ptr,

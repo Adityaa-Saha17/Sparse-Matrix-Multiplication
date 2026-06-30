@@ -15,7 +15,7 @@ constexpr int COL_TILE          = 64;
 constexpr int NNZ_TILE          = 64;
 constexpr int COLS_PER_LANE     = COL_TILE / 32;            // 2
 
-// Phase 2.2 kernel. See spmm_tiled.h for the loop-nest rationale and the
+// Tiled kernel. See spmm_tiled.h for the loop-nest rationale and the
 // traffic accounting vs spmm_memopt(_v2).
 __global__ __launch_bounds__(THREADS_PER_BLOCK, 4)
 void spmm_csr_tiled_kernel(int M, int N,

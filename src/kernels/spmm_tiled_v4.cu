@@ -15,7 +15,7 @@ constexpr int COL_TILE          = 256;
 constexpr int NNZ_TILE          = 64;
 constexpr int COLS_PER_LANE     = COL_TILE / 32;            // 8
 
-// Phase 2.6 kernel. See spmm_tiled_v4.h for design rationale.
+// Single-outer-pass kernel. See spmm_tiled_v4.h for design rationale.
 //
 // Algorithm shape is identical to spmm_tiled_v3; only COL_TILE and
 // COLS_PER_LANE differ. The hypothesis under test: at N=256, a single

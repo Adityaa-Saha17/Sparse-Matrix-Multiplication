@@ -1,23 +1,22 @@
-# Week 3 — Tensor Core SpMM via WMMA (Phase 3 — Milestone Report)
+# Tensor Core SpMM via WMMA (Milestone Report)
 
 **Project:** Architecture-aware Sparse Matrix Multiplication on NVIDIA GPUs.
-**Week dates:** 2026-05-27 to 2026-06-02.
 
 ---
 
 ## Overview — full progression
 
-| Phase | Technique | Best speedup (DoD cells) |
+| Approach | Technique | Best speedup (DoD cells) |
 |---|---|---|
-| Phase 1 (week 1) | Baseline CSR / warp-per-row memopt | up to 1.14× |
-| Phase 2 (week 2) | Tiled shmem staging, 128-col register tile (tiled_v3) | 2.04–2.69× (2/4 DoD cells ≥ 2×) |
-| Phase 3 (week 3) | BSR 16×16 + WMMA Tensor Cores, FP16 A+B / FP32 accumulate | **0.10–0.91×** (all DoD cells slower than baseline) |
+| Baseline | Baseline CSR / warp-per-row memopt | up to 1.14× |
+| Memory optimization | Tiled shmem staging, 128-col register tile (tiled_v3) | 2.04–2.69× (2/4 DoD cells ≥ 2×) |
+| Tensor Core SpMM | BSR 16×16 + WMMA Tensor Cores, FP16 A+B / FP32 accumulate | **0.10–0.91×** (all DoD cells slower than baseline) |
 
 ---
 
-## What I did this week
+## What I did
 
-Built the Tensor Core acceleration layer on top of the Phase 2 infrastructure:
+Built the Tensor Core acceleration layer on top of the memory optimization infrastructure:
 
 - [`src/bsr.h`](../src/bsr.h) / [`src/bsr.cu`](../src/bsr.cu) — Block-Sparse Row (BSR) format with fixed 16×16 blocks. CSR→BSR conversion on the host: collects unique block-columns per block-row, zero-pads sparse blocks to dense FP16 tiles. Reports fill-in statistics.
 - [`src/kernels/spmm_wmma.cu`](../src/kernels/spmm_wmma.cu) — WMMA kernel. Grid: `(block_rows, N/16)`; block: 32 threads (one warp). Each warp accumulates one 16×16 FP32 output tile via `mma_sync` over all non-empty BSR blocks in its block-row.
@@ -68,13 +67,13 @@ The WMMA kernel accumulates in FP32 but the individual multiply operands are FP1
 |---|---|---|
 | < 1e-4 | **≈ 2.61e-4** (uniform) | ❌ |
 
-The error is consistent and structural — it does not vary with m or density. The FP32 kernels (Phases 1 & 2) all achieved rel_l2_err ≤ 4×10⁻⁷. Phase 3 introduces a ~4-order-of-magnitude regression in accuracy alongside the performance regression. The `max_rel_err` on individual elements reaches ~16% (1.6×10⁻¹), confirming that some output elements are seriously wrong due to catastrophic cancellation in the FP16 products.
+The error is consistent and structural — it does not vary with m or density. The FP32 kernels (the CSR kernels) all achieved rel_l2_err ≤ 4×10⁻⁷. Tensor Core SpMM introduces a ~4-order-of-magnitude regression in accuracy alongside the performance regression. The `max_rel_err` on individual elements reaches ~16% (1.6×10⁻¹), confirming that some output elements are seriously wrong due to catastrophic cancellation in the FP16 products.
 
 ---
 
-## Results — Phase 3 sweep on Colab T4
+## Results — Tensor Core SpMM sweep on Colab T4
 
-Median ms over 20 timed iterations, 5 warmup, `n = 256`. Baseline and tiled_v3 values from week-2 report (same hardware). Speedup = baseline_ms / wmma_ms (>1 means wmma faster).
+Median ms over 20 timed iterations, 5 warmup, `n = 256`. Baseline and tiled_v3 values from the memory-optimization report (same hardware). Speedup = baseline_ms / wmma_ms (>1 means wmma faster).
 
 | m=k | density | baseline (ms) | tiled_v3 (ms) | wmma (ms) | wmma vs baseline | wmma vs tiled_v3 |
 |---|---|---|---|---|---|---|
@@ -108,7 +107,7 @@ Head-to-head on the 4 DoD cells (all kernels, same session):
 
 **0 of 4 DoD cells pass** (and the correctness bar also fails at rel_l2_err ≈ 2.61e-4 > 1e-4).
 
-The result confirms the fill-in analysis exactly: for uniform random sparsity, BSR+WMMA is substantially worse than the baseline CSR kernel in every DoD cell. The m=4096 gap that Phase 2 could not close to ≥ 2× remains unclosed; TC makes it significantly worse.
+The result confirms the fill-in analysis exactly: for uniform random sparsity, BSR+WMMA is substantially worse than the baseline CSR kernel in every DoD cell. The m=4096 gap that memory optimization could not close to ≥ 2× remains unclosed; TC makes it significantly worse.
 
 ---
 
@@ -124,7 +123,7 @@ The result confirms the fill-in analysis exactly: for uniform random sparsity, B
 | 0.010 | ~38–43 | 92× | 92× | **~0.5 GFLOPS** |
 | 0.001 | ~14–16 | 225× | 225× | **~0.07 GFLOPS** |
 
-The "measured GFLOPS" is normalised against original nnz and gives a flattering but misleading picture. The kernel is actually doing 20–225× more FMA operations than the nnz count implies. Even at 200 GFLOPS (near the T4's FP16 TC roof), the 20× fill-in means only ~10 useful GFLOPS reach the output. The tiled_v3 CSR kernel achieves 395–556 GFLOPS (FP32, Phase 2 data) with zero fill-in waste.
+The "measured GFLOPS" is normalised against original nnz and gives a flattering but misleading picture. The kernel is actually doing 20–225× more FMA operations than the nnz count implies. Even at 200 GFLOPS (near the T4's FP16 TC roof), the 20× fill-in means only ~10 useful GFLOPS reach the output. The tiled_v3 CSR kernel achieves 395–556 GFLOPS (FP32, memory optimization data) with zero fill-in waste.
 
 ### Why m=16384 d=0.05 is the only partial win
 
@@ -132,7 +131,7 @@ At m=16384 the dense matrix B is 16384 × 256 × 4 B ≈ 16 MB — far beyond th
 
 ### ncu profile
 
-The ncu cells failed in this Colab session due to a `getcwd()` path error — the shell's working directory was corrupted after the Python `subprocess.run` calls in Step 13. The ncu cells in the notebook have been updated to use absolute paths (`/content/spmm/build/spmm_bench`) so they will run correctly in the next session.
+The ncu cells failed in this Colab session due to a `getcwd` path error — the shell's working directory was corrupted after the Python `subprocess.run` calls in Step 13. The ncu cells in the notebook have been updated to use absolute paths (`/content/spmm/build/spmm_bench`) so they will run correctly in the next session.
 
 ---
 
@@ -153,11 +152,11 @@ tiled_v3 remains the best overall kernel. The TC path is not competitive for ran
 
 ## Key lessons
 
-**Phase 1:** Warp-per-row (memopt) wins only for latency-bound regimes (very short rows); loses in bandwidth-bound regimes due to lower occupancy and register pressure.
+**the baseline:** Warp-per-row (memopt) wins only for latency-bound regimes (very short rows); loses in bandwidth-bound regimes due to lower occupancy and register pressure.
 
-**Phase 2:** Shared-memory staging of nnz tiles with 128-col register tiles (tiled_v3) cuts DRAM re-fetches and wins the bandwidth-bound regime (2.04–2.69×). The m=4096 cells hit an L2-cache ceiling (~1.25× max) — there is no DRAM bandwidth to recover.
+**memory optimization:** Shared-memory staging of nnz tiles with 128-col register tiles (tiled_v3) cuts DRAM re-fetches and wins the bandwidth-bound regime (2.04–2.69×). The m=4096 cells hit an L2-cache ceiling (~1.25× max) — there is no DRAM bandwidth to recover.
 
-**Phase 3:** For *random* sparse matrices, BSR 16×16 blocks carry a 20–226× fill-in penalty. T4 Tensor Cores provide only 8× raw throughput over FP32. The memory overhead completely erases the compute advantage, making WMMA uniformly slower than the FP32 baseline and 2.4–13× slower than tiled_v3 across the DoD cells. Additionally, FP16 arithmetic introduces rel_l2_err ≈ 2.6×10⁻⁴, exceeding the 1×10⁻⁴ correctness threshold.
+**Tensor Core SpMM:** For *random* sparse matrices, BSR 16×16 blocks carry a 20–226× fill-in penalty. T4 Tensor Cores provide only 8× raw throughput over FP32. The memory overhead completely erases the compute advantage, making WMMA uniformly slower than the FP32 baseline and 2.4–13× slower than tiled_v3 across the DoD cells. Additionally, FP16 arithmetic introduces rel_l2_err ≈ 2.6×10⁻⁴, exceeding the 1×10⁻⁴ correctness threshold.
 
 **Conclusion:** TC acceleration for SpMM is beneficial only for *structured block-sparse* matrices — attention patterns, GNN adjacency blocks, convolution im2col — where each block is densely populated and fill-in overhead approaches 1×. For uniform random sparsity the optimal strategy on T4 remains FP32 CSR with shared-memory tiling (tiled_v3).
 

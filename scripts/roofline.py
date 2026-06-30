@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-roofline.py — Week 4 roofline / "% of theoretical" analysis for SpMM on T4.
+roofline.py — Stage 4 roofline / "% of theoretical" analysis for SpMM on T4.
 
 Takes the harness benchmark lines (kernel=... m=... gflops=...) and computes,
 for every kernel x problem cell:
@@ -51,7 +51,7 @@ RIDGE_FP32       = FP32_PEAK_GFLOPS / DRAM_BW_GBs  # ~25.4 FLOP/byte
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ----------------------------------------------------------- embedded dataset
-# Captured from colabRunner.ipynb cell 26 (full Phase-2 sweep, Colab T4,
+# Captured from colabRunner.ipynb cell 26 (full memory-optimization sweep, Colab T4,
 # n=256, warmup 5, iters 20, seed 42). This is the canonical measured data so
 # the analysis is reproducible without a GPU. Re-running the notebook and
 # feeding the new log to this script reproduces (and refreshes) the table.
@@ -159,8 +159,8 @@ FIELD = re.compile(r"(\w+)=([\-\d.eE+]+|\w+)")
 
 def parse(text):
     rows = []
-    for line in text.strip().splitlines():
-        line = line.strip()
+    for line in text.strip.splitlines:
+        line = line.strip
         if not line.startswith("kernel="):
             continue
         d = dict(FIELD.findall(line))
@@ -216,7 +216,7 @@ def write_csv(path, rows, cols):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
-        w.writeheader()
+        w.writeheader
         for r in rows:
             w.writerow(r)
 
@@ -225,12 +225,12 @@ def density_label(m, nnz):
     return nnz / (m * m)
 
 
-def main():
+def main:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     do_plot = "--plot" in sys.argv
 
     if args:
-        text = open(args[0]).read()
+        text = open(args[0]).read
     else:
         text = EMBEDDED
     rows = parse(text)
@@ -305,9 +305,9 @@ def plot(res):
     ax.grid(True, which="both", ls=":", alpha=0.4)
     out = os.path.join(ROOT, "reports", "figures", "roofline_t4.png")
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    fig.tight_layout(); fig.savefig(out, dpi=130)
+    fig.tight_layout; fig.savefig(out, dpi=130)
     print(f"Wrote {out}")
 
 
 if __name__ == "__main__":
-    main()
+    main

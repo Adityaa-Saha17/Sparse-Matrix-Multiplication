@@ -17,7 +17,7 @@ constexpr int COL_TILE          = 128;
 constexpr int NNZ_TILE          = 64;
 constexpr int COLS_PER_LANE     = 4;                       // float4 load per p
 
-// Phase 2.3 + 2.4 kernel. See spmm_tiled_v2.h for the rationale and the
+// Wider-tile + vectorized-load kernel. See spmm_tiled_v2.h for the rationale and the
 // constraints (N % COL_TILE == 0; 16-byte aligned device pointers).
 __global__ __launch_bounds__(THREADS_PER_BLOCK, 4)
 void spmm_csr_tiled_v2_kernel(int M, int N,
@@ -99,7 +99,7 @@ void spmm_tiled_v2(const CSR& d_A, const float* d_B, float* d_C, int N) {
     if (N % COL_TILE != 0) {
         std::fprintf(stderr,
             "spmm_tiled_v2: N=%d is not a multiple of COL_TILE=%d. "
-            "Use spmm_tiled (Phase 2.2) for general N, or pad N up.\n",
+            "Use spmm_tiled for general N, or pad N up.\n",
             N, COL_TILE);
         std::abort();
     }

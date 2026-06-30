@@ -4,7 +4,7 @@
 
 namespace spmm {
 
-// Phase 2.1 — register-footprint-reduced version of spmm_memopt.
+// Register-footprint-reduced version of spmm_memopt.
 //
 // Same warp-per-row CSR SpMM as spmm_memopt.cu (v1), with three targeted
 // changes aimed at lifting bandwidth-bound achieved occupancy on T4 (sm_75):
@@ -20,7 +20,7 @@ namespace spmm {
 //      recomputing `k * N + col` per iteration.
 //
 // Math is identical to spmm_memopt within FP rounding. Used as an A/B
-// against the v1 kernel for the Phase 2 ablation; both remain in the build.
+// against the v1 kernel for the ablation; both remain in the build.
 void spmm_memopt_v2(const CSR& d_A, const float* d_B, float* d_C, int N);
 
 }  // namespace spmm

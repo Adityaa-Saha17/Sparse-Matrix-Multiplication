@@ -1,4 +1,4 @@
-# Phase 2.1 verification recipe (Colab T4)
+# Register-footprint kernel (memopt_v2) — verification recipe (Colab T4)
 
 Status: code merged locally on `main`; not yet committed. After you push, run the cells below on Colab to collect the v2 numbers. The notebook is `colabRunner.ipynb` — paste these as new cells at the bottom.
 
@@ -8,7 +8,7 @@ Status: code merged locally on `main`; not yet committed. After you push, run th
   - `__launch_bounds__(256, 4)` to cap per-thread register usage at the 4-blocks/SM target,
   - cached `values[p]` in a scalar register,
   - hoisted `B + k*N` row pointer with `size_t` arithmetic.
-- `src/bench/harness.cu` extended with `--kernel memopt_v2` and `--kernel all` (baseline + memopt + memopt_v2). `--kernel both` is unchanged (still baseline + memopt) so existing Phase 1 sweep cells still work.
+- `src/bench/harness.cu` extended with `--kernel memopt_v2` and `--kernel all` (baseline + memopt + memopt_v2). `--kernel both` is unchanged (still baseline + memopt) so existing the baseline sweep cells still work.
 - `Makefile` SRCS extended.
 
 ## Cell 1 — Build
@@ -41,7 +41,7 @@ nvcc --ptxas-options=-v -arch=sm_75 -O3 -std=c++17 -Isrc \
 ```
 
 What we want to see:
-- v1 reports ~63 registers (matches the Phase 1 ncu measurement).
+- v1 reports ~63 registers (matches the the baseline ncu measurement).
 - v2 reports ≤60 registers, and **zero stack frame / zero spills**. If v2 introduces spills, the launch_bounds is too tight — back off to `__launch_bounds__(256, 3)` or drop it entirely.
 
 ## Cell 3 — Re-run the 12-cell sweep with all three kernels
@@ -68,7 +68,7 @@ This produces a 12 × 3 = 36-row table. The diff to track:
 
 ## Cell 4 — ncu profile for v2
 
-Match the four Phase 1 profile points so the comparison is apples-to-apples. Two are sufficient for 2.1 sign-off (A2 bandwidth-bound + B2 latency-bound).
+Match the four the baseline profile points so the comparison is apples-to-apples. Two are sufficient for 2.1 sign-off (A2 bandwidth-bound + B2 latency-bound).
 
 ```bash
 %%bash
@@ -86,7 +86,7 @@ $NCU $BIN --m 4096 --k 4096 --n 256 --density 0.001 \
      --iters 1 --warmup 0 --kernel memopt_v2 2>&1 | tail -200
 ```
 
-Note the `tail -200`, not `tail -80` — the Phase 1 B2 record lost its Speed-of-Light section to the shorter tail. We want the full SoL block this time.
+Note the `tail -200`, not `tail -80` — the the baseline B2 record lost its Speed-of-Light section to the shorter tail. We want the full SoL block this time.
 
 Numbers to record from each profile:
 - Registers per thread (should match ptxas number from Cell 2).
@@ -95,15 +95,15 @@ Numbers to record from each profile:
 - Waves per SM (A2-v1: 6.4, B2-v1: small).
 - Any new warnings or the disappearance of v1's warnings.
 
-## Decision rule for closing Phase 2.1
+## Decision rule for closing the register-footprint kernel
 
-Phase 2.1 is done when **all three** hold:
+the register-footprint kernel is done when **all three** hold:
 1. ptxas reports v2 ≤ 60 registers with zero spills.
-2. v2 correctness: `rel_l2_err < 1e-4` on every sweep cell (same DoD as Phase 1).
+2. v2 correctness: `rel_l2_err < 1e-4` on every sweep cell (same DoD as the baseline).
 3. v2 is **not worse** than memopt in any cell, and is at least tied with baseline in the bandwidth-bound cells (m=16384, d=0.05).
 
 If criterion 3 fails, that's evidence that register pressure isn't the binding constraint and we move directly to 2.2 (shmem tiling of B) without further reg tuning.
 
 ## After the run
 
-Paste the Cell 2 ptxas output and the Cell 3 sweep table back here. I'll fold them into `reports/week2.md` and decide whether to proceed to 2.2 or revisit 2.1.
+Paste the Cell 2 ptxas output and the Cell 3 sweep table back here. I'll fold them into `reports/memory_optimization.md` and decide whether to proceed to 2.2 or revisit 2.1.

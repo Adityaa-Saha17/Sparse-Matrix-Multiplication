@@ -1,18 +1,17 @@
-# Week 2 — Memory Optimization (Phase 2)
+# Memory Optimization
 
 **Project:** Architecture-aware Sparse Matrix Multiplication on NVIDIA GPUs.
-**Week dates:** 2026-05-20 to 2026-05-26.
 
 ---
 
-## What I did this week
+## What I did
 
-Built five new kernels on top of the week-1 pair, each targeting a specific memory bottleneck identified by ncu:
+Built five new kernels on top of the baseline pair, each targeting a specific memory bottleneck identified by ncu:
 
 - [`spmm_memopt_v2.cu`](../src/kernels/spmm_memopt_v2.cu) — added `__launch_bounds__(256, 4)`, hoisted `B + k*N` pointer, cached `values[p]` in a register. **No-op** — within ±0.5% of `memopt` everywhere; bottleneck is warp-stall latency, not registers.
 - [`spmm_tiled.cu`](../src/kernels/spmm_tiled.cu) — restructured loop nest into outer col-tile (64 cols) + inner nnz-tile staged into 4 KB shmem per warp. Cuts B re-fetches per row from 8 passes to 4.
 - [`spmm_tiled_v2.cu`](../src/kernels/spmm_tiled_v2.cu) — `COL_TILE` doubled to 128, B reads via `float4`. **Regression on 3 bandwidth-bound cells** — float4 floods the warp memory queue; Compute SM Throughput collapses 60% → 19%.
-- [`spmm_tiled_v3.cu`](../src/kernels/spmm_tiled_v3.cu) — keeps `COL_TILE = 128`, reverts float4 → scalar lane-strided loads. Recovers Compute SM Throughput to 61%. **Phase 2 overall winner.**
+- [`spmm_tiled_v3.cu`](../src/kernels/spmm_tiled_v3.cu) — keeps `COL_TILE = 128`, reverts float4 → scalar lane-strided loads. Recovers Compute SM Throughput to 61%. **memory optimization overall winner.**
 - [`spmm_tiled_v4.cu`](../src/kernels/spmm_tiled_v4.cu) — `COL_TILE` 128 → 256, `COLS_PER_LANE` 4 → 8; outer loop runs once per row. **Regression on m=4096 cells** — 8-FMA dependency chain serializes load-FMA-load, drops SM Throughput 13–14 pp. Wins on m≥8192 dense cells.
 
 ---
@@ -30,9 +29,9 @@ Built five new kernels on top of the week-1 pair, each targeting a specific memo
 
 ---
 
-## Results — Phase 2 sweep on Colab T4
+## Results — memory optimization sweep on Colab T4
 
-Median ms over 20 timed iterations, 5 warmup, `--kernel all`, `n = 256`. Bold = fastest in row. Speedup = best Phase 2 kernel vs. baseline.
+Median ms over 20 timed iterations, 5 warmup, `--kernel all`, `n = 256`. Bold = fastest in row. Speedup = best memory optimization kernel vs. baseline.
 
 | m=k | density | baseline | memopt | memopt_v2 | tiled | tiled_v2 | tiled_v3 | tiled_v4 | best vs baseline | DoD |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -76,7 +75,7 @@ All kernels agree with `cusparseSpMM` to within `rel_l2_err ≤ 4×10⁻⁷` on 
 
 ## DoD verdict
 
-Three independent Colab T4 runs, best Phase 2 kernel vs. baseline on the 4 DoD cells:
+Three independent Colab T4 runs, best memory optimization kernel vs. baseline on the 4 DoD cells:
 
 | DoD cell | run 1 | run 2 | run 3 | **median** | passes ≥2×? |
 |---|---|---|---|---|---|
@@ -85,7 +84,7 @@ Three independent Colab T4 runs, best Phase 2 kernel vs. baseline on the 4 DoD c
 | m=8192 d=0.05 | 2.12× | 2.56× | 2.69× | **2.56×** | ✓ |
 | m=8192 d=0.01 | 2.05× | 1.99× | 2.04× | **2.04×** | ✓ |
 
-**2 of 4 DoD cells pass.** The m=4096 cells cap empirically at ~1.3× across all six kernel variants and three runs. The reason: at m=4096 the dense matrix B (4 MB) fits entirely in T4's 4 MB L2, making the regime compute-bound rather than bandwidth-bound — memory-pattern optimisations hit a roofline ceiling, not a bandwidth one. The remaining gap is carried into Phase 3 (Tensor Cores).
+**2 of 4 DoD cells pass.** The m=4096 cells cap empirically at ~1.3× across all six kernel variants and three runs. The reason: at m=4096 the dense matrix B (4 MB) fits entirely in T4's 4 MB L2, making the regime compute-bound rather than bandwidth-bound — memory-pattern optimisations hit a roofline ceiling, not a bandwidth one. The remaining gap is carried into Tensor Core SpMM (Tensor Cores).
 
 ---
 
@@ -136,9 +135,9 @@ DRAM at 10% confirms C2 is L2-cache-bound, not bandwidth-bound. The Compute SM d
 
 ---
 
-## Plan for week 3
+## Next: Tensor Cores
 
-Block-Sparse Row (BSR) format, 16×16 blocks, WMMA API (`mma.h`), FP16 input with FP32 accumulate. First test: does Tensor Core acceleration close the m=4096 gap? Week 3 is the **milestone formal report** — full progression baseline → memopt → tiled → TC with speedup graphs.
+Block-Sparse Row (BSR) format, 16×16 blocks, WMMA API (`mma.h`), FP16 input with FP32 accumulate. First test: does Tensor Core acceleration close the m=4096 gap? This is the **milestone formal report** — full progression baseline → memopt → tiled → TC with speedup graphs.
 
 ---
 

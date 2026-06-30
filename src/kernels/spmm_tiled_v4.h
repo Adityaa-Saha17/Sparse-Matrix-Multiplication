@@ -4,12 +4,12 @@
 
 namespace spmm {
 
-// Phase 2.6 — high-ILP, single-outer-pass variant of spmm_tiled_v3.
+// High-ILP, single-outer-pass variant of spmm_tiled_v3.
 //
-// Motivation (m=4096 DoD gap). Phase 2 close-out left the m=4096 DoD cells
+// Motivation (m=4096 DoD gap). Earlier work left the m=4096 DoD cells
 // short of the 2x bar:
 //
-//   cell                   baseline    best Phase 2 (kernel)    speedup
+//   cell                   baseline    best prior   (kernel)    speedup
 //   m=4096 d=0.05          1.04 ms     0.82 ms (tiled_v3)       1.27x
 //   m=4096 d=0.01          0.19 ms     0.14 ms (tiled_v2)       1.36x
 //
@@ -55,7 +55,7 @@ namespace spmm {
 // Honest expected outcome: v4 likely improves m=4096 by single-digit to
 // low-double-digit percent over v3; whether that crosses 2x over baseline
 // is data-dependent and not guaranteed by the design. The header is being
-// explicit about this because the project's Phase 2 narrative has been
+// explicit about this because the project's optimization narrative has been
 // honest throughout (memopt_v2 was a no-op, tiled_v2 was a regression).
 //
 // Constraints: same as tiled_v3 -- N is not required to be a multiple of

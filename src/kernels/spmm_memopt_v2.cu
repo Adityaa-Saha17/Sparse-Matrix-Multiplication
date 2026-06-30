@@ -9,7 +9,7 @@ namespace spmm {
 
 namespace {
 
-// Warp-per-row CSR SpMM, v2 (Phase 2.1). See spmm_memopt_v2.h for the rationale
+// Warp-per-row CSR SpMM, v2. See spmm_memopt_v2.h for the rationale
 // and the diff vs v1 (spmm_memopt.cu). Intentionally a near-clone of v1 so the
 // only deltas under measurement are register pressure and address arithmetic.
 __global__ __launch_bounds__(256, 4)

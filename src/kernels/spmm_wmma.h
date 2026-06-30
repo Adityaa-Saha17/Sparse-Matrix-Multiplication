@@ -1,6 +1,6 @@
 #pragma once
 
-// Phase 3 — Tensor Core SpMM via the WMMA API.
+// Tensor Core SpMM via the WMMA API.
 //
 // Requires: CUDA sm_75+ (Turing), compiled with -arch=sm_75 or higher.
 //

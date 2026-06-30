@@ -1,9 +1,9 @@
-// Benchmark harness — Phases 1, 2, and 3.
+// Benchmark harness — all SpMM kernels.
 //   - Generates (or loads) a sparse matrix A and a dense matrix B.
 //   - Runs the project's SpMM kernels and cuSPARSE's cusparseSpMM as reference.
 //   - Reports correctness (max |abs| / |rel| error) and median time + GFLOPS.
 //
-// Phase 3 additions (--kernel wmma):
+// Tensor Core additions (--kernel wmma):
 //   - Builds BSR from CSR on the host.
 //   - Converts B to FP16 once (excluded from timed loop).
 //   - Benchmarks spmm_wmma (Tensor Core kernel) and reports BSR fill-in stats.
@@ -32,6 +32,8 @@
 #include "../kernels/spmm_tiled_v3.h"
 #include "../kernels/spmm_tiled_v4.h"
 #include "../kernels/spmm_wmma.h"
+#include "../spmm_hybrid.h"
+#include "../spmm_multigpu.h"
 #include "../utils.h"
 
 namespace {
@@ -45,7 +47,8 @@ struct Args {
     int   warmup  = 3;
     int   iters   = 10;
     std::string mtx_path;  // optional binary CSR file; overrides synthetic
-    std::string kernel = "both";  // "baseline" | "memopt" | "memopt_v2" | "tiled" | "tiled_v2" | "tiled_v3" | "tiled_v4" | "wmma" | "both" | "all"
+    std::string kernel = "both";  // "baseline" | "memopt" | "memopt_v2" | "tiled" | "tiled_v2" | "tiled_v3" | "tiled_v4" | "wmma" | "hybrid" | "multigpu" | "unified" | "both" | "all"
+    int   gpus    = 0;            // 0 = all visible (used by "multigpu")
 };
 
 void print_usage(const char* prog) {
@@ -60,14 +63,19 @@ void print_usage(const char* prog) {
         "  --iters INT      timed iterations       (default 10)\n"
         "  --bin PATH       load CSR from binary file (overrides --m/--k/--density)\n"
         "  --kernel STR     'baseline' | 'memopt' | 'memopt_v2' | 'tiled' | 'tiled_v2'\n"
-        "                   | 'tiled_v3' | 'tiled_v4' | 'wmma' | 'both' | 'all'\n"
-        "                   'both' = baseline + memopt (Phase 1 default)\n"
+        "                   | 'tiled_v3' | 'tiled_v4' | 'wmma' | 'hybrid'\n"
+        "                   | 'multigpu' | 'unified' | 'both' | 'all'\n"
+        "                   'both' = baseline + memopt (default)\n"
         "                   'all'  = baseline + memopt + memopt_v2 + tiled + tiled_v2\n"
-        "                            + tiled_v3 + tiled_v4 + wmma\n"
-        "                            (full ablation: all eight kernels side by side)\n"
+        "                            + tiled_v3 + tiled_v4 + wmma + hybrid\n"
+        "                            (full ablation, side by side)\n"
+        "                   'hybrid'   = auto CUDA-core/Tensor-Core dispatch\n"
+        "                   'multigpu' = nnz-balanced row split across GPUs (CUDA-core)\n"
+        "                   'unified'  = single-GPU unified-memory path (CUDA-core)\n"
         "                   note: tiled_v2 requires N %% 128 == 0\n"
         "                   note: wmma requires sm_75+ and N %% 16 == 0\n"
-        "                   default: 'both'\n",
+        "  --gpus INT       device count for 'multigpu' (default: all visible)\n"
+        "                   default kernel: 'both'\n",
         prog);
 }
 
@@ -92,6 +100,7 @@ Args parse_args(int argc, char** argv) {
         else if (opt == "--iters")   a.iters   = std::stoi(needs("--iters"));
         else if (opt == "--bin")     a.mtx_path = needs("--bin");
         else if (opt == "--kernel")  a.kernel = needs("--kernel");
+        else if (opt == "--gpus")    a.gpus   = std::stoi(needs("--gpus"));
         else if (opt == "-h" || opt == "--help") { print_usage(argv[0]); std::exit(0); }
         else {
             std::fprintf(stderr, "unknown option: %s\n", opt.c_str());
@@ -233,7 +242,7 @@ KernelResult run_and_benchmark(const std::string& name,
     return {name, ms, static_cast<float>(gflops), err.max_abs, err.max_rel, err.rel_l2};
 }
 
-// Phase 3: benchmark the WMMA kernel which takes BSR + FP16 B instead of CSR + FP32 B.
+// Benchmark the WMMA kernel which takes BSR + FP16 B instead of CSR + FP32 B.
 // BSR and d_B_fp16 must already be prepared (construction time is excluded from timing).
 // FLOPS are computed against the original nnz (not the padded block count) so that
 // speedup numbers are apples-to-apples with the CSR kernels.
@@ -356,7 +365,7 @@ int main(int argc, char** argv) {
                                             d_A, d_B, d_C_ours, h_C_ref));
     }
 
-    // ── Phase 3: Tensor Core / WMMA kernel (BSR format) ────────────────────
+    // ── Tensor Core / WMMA kernel (BSR format) ─────────────────────────────
     if (args.kernel == "wmma" || args.kernel == "all") {
         if (args.n % 16 != 0) {
             std::fprintf(stderr,
@@ -394,6 +403,55 @@ int main(int argc, char** argv) {
             CUDA_CHECK(cudaFree(d_B_fp16));
             spmm::bsr_free_device(d_bsr);
         }
+    }
+
+    // ── Hybrid auto-dispatch (CUDA cores vs. Tensor Cores) ─────────────────
+    if (args.kernel == "hybrid" || args.kernel == "all") {
+        spmm::HybridPlan plan = spmm::hybrid_choose(h_A, args.n);
+        std::printf(
+            "hybrid_plan backend=%s fill_in=%.2f block_density=%.4f "
+            "threshold=%.2f n_aligned=%d reason=\"%s\"\n",
+            spmm::backend_name(plan.backend), plan.fill_in_ratio,
+            plan.block_density, plan.threshold, plan.n_aligned ? 1 : 0, plan.reason);
+
+        std::vector<float> h_C(static_cast<size_t>(args.m) * args.n);
+        float ms = spmm::spmm_hybrid_run(plan, h_A, h_B.data(), h_C.data(),
+                                         args.n, args.warmup, args.iters);
+        ErrorStats err = compare(h_C, h_C_ref);
+        double gflops = (2.0 * static_cast<double>(h_A.nnz) * args.n) /
+                        (static_cast<double>(ms) * 1.0e6);
+        std::string label = std::string("hybrid[") + spmm::backend_name(plan.backend) + "]";
+        results.push_back({label, ms, static_cast<float>(gflops),
+                           err.max_abs, err.max_rel, err.rel_l2});
+    }
+
+    // ── Multi-GPU row split (CUDA-core path) ───────────────────────────────
+    if (args.kernel == "multigpu") {
+        int want = (args.gpus > 0) ? args.gpus : spmm::gpu_count();
+        std::vector<float> h_C(static_cast<size_t>(args.m) * args.n);
+        spmm::MultiGpuResult r = spmm::spmm_multigpu(
+            h_A, h_B.data(), h_C.data(), args.n, want, args.warmup, args.iters);
+        std::printf("multigpu_split gpus=%d", r.num_gpus);
+        for (int g = 0; g < r.num_gpus; ++g)
+            std::printf(" gpu%d:rows=%d,nnz=%d", g, r.rows[g], r.nnz[g]);
+        std::printf("\n");
+        ErrorStats err = compare(h_C, h_C_ref);
+        double gflops = (2.0 * static_cast<double>(h_A.nnz) * args.n) /
+                        (static_cast<double>(r.time_ms) * 1.0e6);
+        results.push_back({"multigpu", r.time_ms, static_cast<float>(gflops),
+                           err.max_abs, err.max_rel, err.rel_l2});
+    }
+
+    // ── Unified-memory path (single GPU, CUDA-core) ────────────────────────
+    if (args.kernel == "unified") {
+        std::vector<float> h_C(static_cast<size_t>(args.m) * args.n);
+        float ms = spmm::spmm_unified(h_A, h_B.data(), h_C.data(),
+                                      args.n, args.warmup, args.iters);
+        ErrorStats err = compare(h_C, h_C_ref);
+        double gflops = (2.0 * static_cast<double>(h_A.nnz) * args.n) /
+                        (static_cast<double>(ms) * 1.0e6);
+        results.push_back({"unified", ms, static_cast<float>(gflops),
+                           err.max_abs, err.max_rel, err.rel_l2});
     }
 
     // Report results

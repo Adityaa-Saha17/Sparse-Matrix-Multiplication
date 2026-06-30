@@ -4,12 +4,12 @@
 
 namespace spmm {
 
-// Phase 2.5 — refined col-tile streaming. Combines Phase 2.3's larger
-// register tile (COL_TILE = 128) with Phase 2.2's scalar lane-strided
+// Refined col-tile streaming. Combines spmm_tiled_v2's larger
+// register tile (COL_TILE = 128) with spmm_tiled's scalar lane-strided
 // load pattern.
 //
-// Built to address the regression observed in Phase 2.3 + 2.4 (spmm_tiled_v2)
-// vs Phase 2.2 (spmm_tiled). On the Colab T4 sweep (A2: m=8192 d=0.01):
+// Built to address the regression observed in spmm_tiled_v2
+// vs spmm_tiled. On the Colab T4 sweep (A2: m=8192 d=0.01):
 //
 //                          A2_tiled    A2_tiled_v2
 //   Compute SM throughput   60.2 %      18.9 %       (3.2x drop)
@@ -22,9 +22,9 @@ namespace spmm {
 // so the scheduler runs short of issuable warps.
 //
 // Single-axis change vs tiled_v2:
-//   - keep COL_TILE = 128, COLS_PER_LANE = 4 (Phase 2.3's win: half as
+//   - keep COL_TILE = 128, COLS_PER_LANE = 4 (spmm_tiled_v2's win: half as
 //     many outer passes per row at N=256, 4 -> 2)
-//   - revert the float4 loads/stores back to scalar (Phase 2.4 undone)
+//   - revert the float4 loads/stores back to scalar (the float4 change undone)
 //   - revert the lane-contiguous column layout to lane-strided
 //     (lane l owns cols {l, l+32, l+64, l+96} within the tile), so the
 //     compiler can pipeline 4 independent scalar loads per p instead of
@@ -36,7 +36,7 @@ namespace spmm {
 //
 // No alignment / divisibility constraints: N is not required to be a
 // multiple of COL_TILE (the inner bounds check handles partial tiles
-// the same way Phase 2.2 does).
+// the same way spmm_tiled does).
 void spmm_tiled_v3(const CSR& d_A, const float* d_B, float* d_C, int N);
 
 }  // namespace spmm

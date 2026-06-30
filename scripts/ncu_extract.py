@@ -53,7 +53,7 @@ def harness_line(t):
         r"kernel=(\w+) m=(\d+) k=(\d+) n=(\d+) nnz=(\d+) density=([\d.]+)"
         r" time_ms=([\d.]+) gflops=([\d.]+)",
         t,
-    )
+)
     return m
 
 
@@ -62,7 +62,7 @@ def compulsory_bytes(m, k, n, nnz):
     return 8 * nnz + 4 * (m + 1) + 4 * k * n + 4 * m * n
 
 
-def main():
+def main:
     nb = json.load(open(NOTEBOOK))
     rows = []
     for idx, cell in enumerate(nb["cells"]):
@@ -78,8 +78,8 @@ def main():
                 parts.append((chunks[j], chunks[j + 1]))
         else:
             parts.append((None, t))
-        label = "".join(cell["source"]).strip().splitlines()
-        label = label[0].lstrip("# ").strip() if label else ""
+        label = "".join(cell["source"]).strip.splitlines
+        label = label[0].lstrip("# ").strip if label else ""
         for name, body in parts:
             if "GPU Speed Of Light" not in body:
                 continue
@@ -99,9 +99,9 @@ def main():
             if dram is not None and dur is not None:
                 row["measured_dram_MB"] = round(
                     dram / 100.0 * DRAM_BW_GBs * 1e9 * dur * 1e-3 / 1e6, 1
-                )
+)
             if h:
-                kern, m_, k_, n_, nnz = h.group(1), *map(int, h.groups()[1:5])
+                kern, m_, k_, n_, nnz = h.group(1), *map(int, h.groups[1:5])
                 row.update(kernel=kern, m=m_, k=k_, n=n_, nnz=nnz)
                 flops = 2.0 * nnz * n_
                 cb = compulsory_bytes(m_, k_, n_, nnz)
@@ -113,7 +113,7 @@ def main():
             rows.append(row)
 
     # bundle/print cells repeat earlier profiles verbatim — keep first sighting
-    seen, unique = set(), []
+    seen, unique = set, []
     for r in rows:
         key = (r["dram_pct"], r["l1tex_pct"], r["l2_pct"], r["duration_ms"])
         if key in seen:
@@ -131,7 +131,7 @@ def main():
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
-        w.writeheader()
+        w.writeheader
         w.writerows(rows)
     print(f"wrote {OUT} ({len(rows)} profiles)")
     for r in rows:
@@ -140,8 +140,8 @@ def main():
             f"DRAM {r['dram_pct']}% L1 {r['l1tex_pct']}% L2 {r['l2_pct']}% "
             f"SM {r['sm_pct']}% dur {r['duration_ms']}ms "
             f"-> {r.get('measured_dram_MB','-')} MB"
-        )
+)
 
 
 if __name__ == "__main__":
-    main()
+    main

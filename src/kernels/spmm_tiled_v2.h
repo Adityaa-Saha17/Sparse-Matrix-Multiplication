@@ -4,9 +4,9 @@
 
 namespace spmm {
 
-// Phase 2.3 + 2.4 — col-tile streaming, larger register tile, vectorized B loads.
+// Col-tile streaming, larger register tile, vectorized B loads.
 //
-// Builds on spmm_tiled (Phase 2.2). Two changes:
+// Builds on spmm_tiled. Two changes:
 //
 //   2.3  Register accumulation widened: COL_TILE = 128, COLS_PER_LANE = 4
 //        (each lane holds 4 partial sums per col-tile instead of 2). This
@@ -26,7 +26,7 @@ namespace spmm {
 //   - Device pointers must be 16-byte aligned (cudaMalloc guarantees 256-byte
 //     alignment, so this holds for B and C allocated by the harness).
 //
-// Same shmem stage of (col_idx, values) as Phase 2.2; same launch shape
+// Same shmem stage of (col_idx, values) as spmm_tiled; same launch shape
 // (256 threads/block, __launch_bounds__(256, 4)).
 void spmm_tiled_v2(const CSR& d_A, const float* d_B, float* d_C, int N);
 

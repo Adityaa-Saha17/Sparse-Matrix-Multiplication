@@ -82,7 +82,7 @@ CSR generate_uniform_random_csr(int rows, int cols, float density, int seed) {
 
     // Reservoir-style: per-row, decide which columns are nonzero by Bernoulli.
     // For large matrices with low density this is O(rows*cols) but acceptable for
-    // benchmarking sizes used in Phase 1. Replace with sparser sampling if needed.
+    // benchmarking sizes used early on. Replace with sparser sampling if needed.
     std::vector<int>   rs;
     std::vector<int>   cs;
     std::vector<float> vs;
@@ -100,6 +100,26 @@ CSR generate_uniform_random_csr(int rows, int cols, float density, int seed) {
         }
     }
     return csr_from_coo_host(rows, cols, rs, cs, vs);
+}
+
+CSR csr_row_slice_host(const CSR& m, int row_begin, int row_end) {
+    if (row_begin < 0 || row_end > m.num_rows || row_begin > row_end) {
+        throw std::runtime_error("csr_row_slice_host: invalid row range");
+    }
+    const int rows  = row_end - row_begin;
+    const int start = m.row_ptr[row_begin];
+    const int stop  = m.row_ptr[row_end];
+    const int nnz   = stop - start;
+
+    CSR s = csr_alloc_host(rows, m.num_cols, nnz);
+    for (int r = 0; r <= rows; ++r) {
+        s.row_ptr[r] = m.row_ptr[row_begin + r] - start;
+    }
+    if (nnz > 0) {
+        std::memcpy(s.col_idx, m.col_idx + start, sizeof(int)   * nnz);
+        std::memcpy(s.values,  m.values  + start, sizeof(float) * nnz);
+    }
+    return s;
 }
 
 CSR csr_read_binary_host(const std::string& path) {

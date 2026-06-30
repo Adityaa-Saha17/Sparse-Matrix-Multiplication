@@ -1,6 +1,6 @@
-# Phase 2.2 verification recipe (Colab T4)
+# Tiled-streaming kernel (tiled) — verification recipe (Colab T4)
 
-Status: code merged locally on `main`; not yet committed. Run after (or together with) `phase2_1_verification.md` — both kernels live in the same build now, and `--kernel all` exercises all four (baseline, memopt v1, memopt v2, tiled) in one harness call.
+Status: code merged locally on `main`; not yet committed. Run after (or together with) `verify_register_footprint.md` — both kernels live in the same build now, and `--kernel all` exercises all four (baseline, memopt v1, memopt v2, tiled) in one harness call.
 
 ## What was changed
 
@@ -27,7 +27,7 @@ The handshake spec phrased the goal as "stage B tiles into shmem; reuse across r
 - col_idx/values shmem stage isolates their access pattern from L1 thrashing.
 
 **Likely null result** (latency-bound regime, e.g. m=4096 d=0.001 with ~4 nnz/row):
-- Only 1 col_tile pass uses real work; the others run the staged inner loop with tiny `nnz_in_tile`. Overhead per col_tile (setup, accumulator init, shmem sync) is amortized over very little work. Probably **slower** than memopt_v2 in this regime. That's the expected ablation finding: tiled wins in bandwidth-bound, memopt_v2 wins in latency-bound — strong evidence for the Phase 4 hybrid dispatcher.
+- Only 1 col_tile pass uses real work; the others run the staged inner loop with tiny `nnz_in_tile`. Overhead per col_tile (setup, accumulator init, shmem sync) is amortized over very little work. Probably **slower** than memopt_v2 in this regime. That's the expected ablation finding: tiled wins in bandwidth-bound, memopt_v2 wins in latency-bound — strong evidence for the hybrid dispatcher.
 
 ## Cell 1 — Build
 
@@ -45,7 +45,7 @@ Same as 2.1 cell. If the new `spmm_tiled.cu` is missing from the build, check `g
 ```bash
 %%bash
 cd /content/Sparse-Matrix-Multiplication
-echo "=== tiled (Phase 2.2) ==="
+echo "=== tiled (the tiled-streaming kernel) ==="
 nvcc --ptxas-options=-v -arch=sm_75 -O3 -std=c++17 -Isrc \
      -c src/kernels/spmm_tiled.cu -o /tmp/tiled.o 2>&1 \
      | grep -E "registers|smem|spill|stack frame"
@@ -69,16 +69,16 @@ for m in 1024 4096 8192 16384; do
 done
 ```
 
-12 × 4 = 48 rows. The table to build for `reports/week2.md` should be one row per (m, d) cell with columns: baseline / memopt v1 / memopt v2 / tiled / winner.
+12 × 4 = 48 rows. The table to build for `reports/memory_optimization.md` should be one row per (m, d) cell with columns: baseline / memopt v1 / memopt v2 / tiled / winner.
 
 Decision cuts to look for:
-- **Bandwidth-bound corner** (m=16384 d=0.05): tiled should approach or pass baseline; v1 and v2 will both be ~0.85–0.90× baseline as in Phase 1.
+- **Bandwidth-bound corner** (m=16384 d=0.05): tiled should approach or pass baseline; v1 and v2 will both be ~0.85–0.90× baseline as in the baseline.
 - **Latency-bound corner** (m=4096 d=0.001): tiled likely worst; memopt_v2 should hold the win.
-- **Mid regime** (m=4096–8192, d=0.01): the most interesting cells. The DoD for Phase 2 close-out is **≥ 2× over baseline** here. If tiled is well short of 2×, that flags 2.3 / 2.4 (register accumulation in a more aggressive form, vectorized loads) as required, not optional.
+- **Mid regime** (m=4096–8192, d=0.01): the most interesting cells. The DoD for memory optimization close-out is **≥ 2× over baseline** here. If tiled is well short of 2×, that flags 2.3 / 2.4 (register accumulation in a more aggressive form, vectorized loads) as required, not optional.
 
 ## Cell 4 — ncu profiles for tiled
 
-Two profile points, matching Phase 1's A2 (bandwidth-bound) and B2 (latency-bound):
+Two profile points, matching the baseline's A2 (bandwidth-bound) and B2 (latency-bound):
 
 ```bash
 %%bash
@@ -103,22 +103,22 @@ Numbers to record:
 - L2 hit rate — this is where 2.2 should show movement.
 - Memory chart: hopefully fewer global B loads than v1's profile.
 
-## Decision rule for closing Phase 2
+## Decision rule for closing memory optimization
 
-Phase 2.2 done when:
+the tiled-streaming kernel done when:
 1. ptxas: ≤ 64 regs, shmem ≈ 4 KB, zero spills.
 2. Correctness: `rel_l2_err < 1e-4` across all sweep cells.
 3. tiled beats v1/v2 in the bandwidth-bound corner (m ≥ 8192, d ≥ 0.01).
 
-Phase 2 (the whole week) done when:
-1. The Phase 2 DoD holds: **≥ 2× over baseline at m=4096–8192, d=0.01–0.05** for the best kernel in each cell (which may be different kernels in different cells — that's fine, it's the input to the Phase 4 dispatcher).
-2. ncu shows improved L1 / shared-mem hit rate vs Phase 1's A2/B2 profiles.
-3. `reports/week2.md` written and pushed.
+memory optimization (the whole stage) done when:
+1. The memory optimization DoD holds: **≥ 2× over baseline at m=4096–8192, d=0.01–0.05** for the best kernel in each cell (which may be different kernels in different cells — that's fine, it's the input to the hybrid dispatcher).
+2. ncu shows improved L1 / shared-mem hit rate vs the baseline's A2/B2 profiles.
+3. `reports/memory_optimization.md` written and pushed.
 
 If 2.2 closes but the 2× DoD doesn't, the remaining headroom is in 2.3 (more aggressive register tiling — e.g., bigger COLS_PER_LANE, ≥4) and 2.4 (`float4` loads on B, explicit `__ldg` on the row pointer). I'll write those if needed once we have the 2.2 measurements.
 
 ## After the run
 
 Paste Cell 2's ptxas line and Cell 3's sweep table back here. Based on which cells move and which don't, we either:
-- Close Phase 2 with `reports/week2.md`, or
+- Close memory optimization with `reports/memory_optimization.md`, or
 - Pick exactly the next sub-task (2.3 or 2.4) that targets the remaining gap.

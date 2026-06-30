@@ -24,6 +24,11 @@ namespace spmm {
     // `density` is the fraction of nonzero entries.
     CSR generate_uniform_random_csr(int rows, int cols, float density, int seed);
 
+    // Extract rows [row_begin, row_end) of a host CSR as a new host CSR.
+    // Column count is unchanged; row_ptr is rebased to start at 0. Used by the
+    // multi-GPU path to hand each device an independent row slice of A.
+    CSR csr_row_slice_host(const CSR& m, int row_begin, int row_end);
+
     // Persistence — simple binary format: [int32 rows][int32 cols][int32 nnz]
     //                                      [row_ptr][col_idx][values]
     CSR  csr_read_binary_host(const std::string& path);

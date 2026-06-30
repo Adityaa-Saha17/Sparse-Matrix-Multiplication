@@ -4,7 +4,7 @@
 
 namespace spmm {
 
-// Phase 2.2 — column-tile streaming with shmem-staged CSR rows.
+// Column-tile streaming with shmem-staged CSR rows.
 //
 // Still warp-per-row, but the loop nest is restructured:
 //

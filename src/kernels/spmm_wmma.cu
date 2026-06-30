@@ -1,4 +1,4 @@
-// Phase 3 — Tensor Core SpMM (BSR + WMMA).
+// Tensor Core SpMM (BSR + WMMA).
 // See spmm_wmma.h for the full algorithm description.
 
 #include "spmm_wmma.h"
