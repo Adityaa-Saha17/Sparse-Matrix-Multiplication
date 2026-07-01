@@ -184,4 +184,4 @@ problem-size noise floor.
 
 ### AI - USE
 
-Utilized AI tools such as ***ChatGPT*** and ***Perplexity AI*** to assist with research, gathering relevant information, and developing an appropriate design structure and implementation plan for the project. ***Claude AI*** was used for code validation and testing, formatting, adding comments, and refining the language and presentation of the report.
+The design, CUDA implementation, benchmarking, and performance analysis in this project were carried out by the author. AI tools were used only in a supporting capacity: ***ChatGPT*** and ***Perplexity AI*** for background research and locating reference material, and ***Claude AI*** for code review and testing assistance, formatting, code comments, and refining the wording of this report. All design decisions, kernel implementations, experiments, and conclusions are the author's own.

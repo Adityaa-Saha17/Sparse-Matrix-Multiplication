@@ -274,8 +274,10 @@ block-sparse the very same binary becomes the fastest kernel in the project.
 
 ## AI use
 
-Utilized AI tools (**ChatGPT**, **Perplexity AI**) for research and the roofline
-methodology; **Claude** for the roofline analysis script, the notebook
-data-quality fix, validation of the computed numbers against the harness GFLOPS,
-and report formatting. T4 datasheet figures verified against NVIDIA's published
-T4 Tensor Core specification.
+The roofline methodology, analysis, and conclusions in this report are the
+author's work. AI tools were used only in a supporting capacity: **ChatGPT** and
+**Perplexity AI** for background research, and **Claude AI** to help with the
+roofline analysis script and the notebook data-quality fix, to cross-check the
+computed numbers against the harness GFLOPS, and for report formatting. T4
+datasheet figures were verified against NVIDIA's published T4 Tensor Core
+specification.

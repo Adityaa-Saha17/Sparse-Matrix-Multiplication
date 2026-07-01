@@ -83,6 +83,9 @@ scripts/
   gen_matrices.py             synthetic CSR generator (uniform/banded/block/power-law)
   roofline.py                 roofline analysis; emits sweep/roofline CSVs + plot
   ncu_extract.py              parses notebook ncu output → ncu_sol.csv (SOL, real AI)
+  run_pattern_sweep.py        pattern × size sweep → pattern_sweep.csv (adds pattern col)
+  plot_speedup.py             speedup-over-baseline graph, faceted by pattern/size
+  plot_memory.py              memory-utilization graph (DRAM-BW % + ncu Speed-of-Light)
 reports/
   baseline_csr.md             baseline CSR + first memory-optimization pass
   memory_optimization.md      shared-mem tiling / register-tile kernels
@@ -268,6 +271,33 @@ exposed in the benchmark harness for side-by-side comparison:
 !./build/spmm_bench --kernel multigpu --gpus 2 --m 16384 --k 16384 --n 256 --density 0.01
 !./build/spmm_bench --kernel unified  --m 8192 --k 8192 --n 256 --density 0.01
 ```
+
+## Performance evaluation and result graphs
+
+Two helpers turn a benchmark run into the submission figures.
+
+`scripts/run_pattern_sweep.py` sweeps all four sparsity patterns (uniform,
+banded, block-diagonal, power-law) across matrix sizes, runs every kernel
+through the harness, and writes a tidy CSV with a `pattern` column:
+
+```bash
+!python3 scripts/run_pattern_sweep.py --bench ./build/spmm_bench \
+    --out reports/data/pattern_sweep.csv --n 256 --warmup 5 --iters 20
+```
+
+The graph scripts read the measured CSVs and emit PNGs under `reports/figures/`:
+
+```bash
+# speedup over the CSR baseline, faceted by sparsity pattern
+!python3 scripts/plot_speedup.py --sweep reports/data/pattern_sweep.csv \
+    --out reports/figures/speedup_by_pattern.png
+
+# memory-bandwidth utilization (+ an Nsight Speed-of-Light panel if ncu data exists)
+!python3 scripts/plot_memory.py --out reports/figures/memory_utilization.png
+```
+
+Sections 10 and 11 of `colabRunner.ipynb` run both sweeps and regenerate every
+figure inline, so the whole evaluation reproduces in one notebook pass on a T4.
 
 ## Saving results
 

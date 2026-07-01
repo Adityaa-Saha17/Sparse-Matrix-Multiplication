@@ -3,3 +3,7 @@ dump/
 .DS_Store
 ./claude
 *.ipynb
+__pycache__/
+*.pyc
+build/
+data/
