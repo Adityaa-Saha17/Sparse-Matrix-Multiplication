@@ -16,7 +16,7 @@ where Nsight Compute counters are accessible).
 | 3 | Tensor Core acceleration (block-sparse on T4)                     | ✅ done (BSR 16×16 + WMMA; loses on random sparsity from fill-in, but 851 GFLOP/s / up to 1.81× on structured block-diagonal — see the Tensor-Core and roofline reports) |
 | 4 | Hybrid execution (CUDA cores vs. Tensor Cores)                    | ✅ done (structure-aware auto-dispatch in `spmm_hybrid`; routes by BSR fill-in) |
 | 5 | Memory-aware execution (unified memory / multi-GPU)               | ✅ done (nnz-balanced dual-GPU row split + unified-memory path in `spmm_multigpu`; measured **2.40× on 2×T4** at m=16384 d=0.01 — 199→478 GFLOP/s) |
-| 6 | Performance evaluation across patterns and sizes                  | 🟡 ongoing      |
+| 6 | Performance evaluation across patterns and sizes                  | ✅ done (4 patterns × 4 sizes swept end-to-end; Tensor Cores win big on banded — up to **7.8×** at m=8192 — and block-diagonal, while CSR wins on uniform and power-law where fill-in starves the Tensor Cores; speedup + memory-utilization graphs in `reports/figures/`) |
 | 7 | Final integrated system                                           | ✅ done (`spmm_run` end-to-end driver: auto-dispatch, multi-GPU/unified, cuSPARSE-verified) |
 
 **Latest report:** [reports/roofline_analysis.md](reports/roofline_analysis.md) —
